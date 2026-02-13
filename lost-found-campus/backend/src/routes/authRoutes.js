@@ -3,6 +3,8 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Campus = require('../models/Campus');
+const ActivityLog = require('../models/ActivityLog');
+const AuditLog = require('../models/AuditLog');
 const verifyToken = require('../middleware/authMiddleware');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'lost-found-campus-secret-key-2024';
@@ -22,41 +24,128 @@ router.get('/campuses', async (req, res) => {
     }
 });
 
-// Register
-router.post('/register', async (req, res) => {
+// Request OTP
+router.post('/request-otp', async (req, res) => {
+    console.log(`[DEBUG] Received request-otp: type=${req.body.type}, email=${req.body.email}`);
     try {
-        const { fullName, email, password, phone } = req.body;
+        const { email, phone, type } = req.body; // type: 'register' or 'login'
 
-        // Check if user exists
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
+        if (!phone) return res.status(400).json({ message: "Phone number is required" });
+
+        const generatedOTP = "123456"; // Fixed for testing
+        const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+        // Find or create temp user record for registration, or find existing for login
+        let user = await User.findOne({ email });
+
+        if (type === 'register' && user && user.isPhoneVerified) {
             return res.status(400).json({ message: "User already exists with this email" });
         }
 
-        // Hash password
-        const hashedPassword = await User.hashPassword(password);
+        if (type === 'login' && !user) {
+            return res.status(404).json({ message: "User not found" });
+        }
 
-        // Create new user
-        const user = new User({
-            fullName,
-            email,
-            password: hashedPassword,
-            phone: phone || ""
-        });
+        if (!user) {
+            // Create a "skeleton" user for registration flow
+            user = new User({
+                email,
+                phone,
+                otp: generatedOTP,
+                otpExpires,
+                fullName: 'Temporary User', // overwritten on final register
+                password: 'temp_password'     // overwritten on final register
+            });
+        } else {
+            user.otp = generatedOTP;
+            user.otpExpires = otpExpires;
+            user.phone = phone; // update phone if changed before verification
+        }
+
         await user.save();
 
-        // Generate token
-        const token = generateToken(user._id);
+        console.log(`\n==============================`);
+        console.log(`🚀 NEW OTP REQUESTED`);
+        console.log(`📧 EMAIL: ${email}`);
+        console.log(`📱 PHONE: ${phone}`);
+        console.log(`🔑 CODE:  ${generatedOTP}`);
+        console.log(`==============================\n`);
 
-        res.status(201).json({
-            user: {
-                _id: user._id,
-                fullName: user.fullName,
-                email: user.email,
-                role: user.role,
-                campusId: user.campusId
-            },
-            token
+        res.json({ message: "OTP sent successfully" });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Register
+router.post('/register', async (req, res) => {
+    try {
+        const { fullName, email, password, phone, campusId, role } = req.body;
+
+        if (!phone) {
+            return res.status(400).json({ message: "Mobile number is required" });
+        }
+
+        // Check if user exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser && existingUser.isPhoneVerified) {
+            return res.status(400).json({ message: "User already exists with this email" });
+        }
+
+        // Domain Validation (College-only auth)
+        if (campusId) {
+            const campus = await Campus.findById(campusId);
+            if (campus && campus.allowedEmailDomains && campus.allowedEmailDomains.length > 0) {
+                const domain = email.split('@')[1];
+                if (!campus.allowedEmailDomains.includes(domain)) {
+                    return res.status(403).json({
+                        message: `Access restricted. Please use your official ${campus.name} email.`
+                    });
+                }
+            }
+        }
+
+        const generatedOTP = "123456"; // Fixed for testing
+        const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+        const hashedPassword = await User.hashPassword(password);
+
+        let user;
+        if (existingUser) {
+            user = existingUser;
+            user.fullName = fullName;
+            user.password = hashedPassword;
+            user.phone = phone;
+            user.campusId = campusId;
+            user.role = role || 'student';
+            user.otp = generatedOTP;
+            user.otpExpires = otpExpires;
+        } else {
+            user = new User({
+                fullName,
+                email,
+                password: hashedPassword,
+                phone,
+                campusId,
+                role: role || 'student',
+                isApproved: role === 'student' ? true : false,
+                isPhoneVerified: false,
+                otp: generatedOTP,
+                otpExpires: otpExpires
+            });
+        }
+        await user.save();
+
+        console.log(`\n==============================`);
+        console.log(`📝 REGISTRATION OTP`);
+        console.log(`📧 EMAIL: ${user.email}`);
+        console.log(`📱 PHONE: ${phone}`);
+        console.log(`🔑 CODE:  ${generatedOTP}`);
+        console.log(`==============================\n`);
+
+        res.status(200).json({
+            status: 'pending_verification',
+            message: "OTP sent to your mobile number",
+            email: user.email
         });
     } catch (error) {
         console.error("Register error:", error);
@@ -68,7 +157,7 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, deviceInfo } = req.body;
 
         // Find user
         const user = await User.findOne({ email }).populate('campusId');
@@ -76,11 +165,49 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ message: "Invalid email or password" });
         }
 
-        // Check password
+        // Check Password
         const isMatch = await user.comparePassword(password);
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid email or password" });
         }
+
+        // Check Phone Verification
+        if (!user.isPhoneVerified) {
+            const generatedOTP = "123456"; // Fixed for testing
+            user.otp = generatedOTP;
+            user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+            await user.save();
+
+            console.log(`\n==============================`);
+            console.log(`🔐 LOGIN OTP (UNVERIFIED)`);
+            console.log(`📧 EMAIL: ${user.email}`);
+            console.log(`📱 PHONE: ${user.phone}`);
+            console.log(`🔑 CODE:  ${generatedOTP}`);
+            console.log(`==============================\n`);
+
+            return res.status(200).json({
+                status: 'pending_verification',
+                message: "Verify your phone number with OTP",
+                email: user.email
+            });
+        }
+
+        // Security Check: Account Suspension
+        if (user.status === 'suspended') {
+            return res.status(403).json({ message: "Your account has been suspended. Please contact admin." });
+        }
+
+        // Security Check: Staff/Admin Approval
+        if (!user.isApproved) {
+            return res.status(403).json({ message: "Your account is pending approval by campus administrator." });
+        }
+
+        // Log Login Activity
+        await ActivityLog.create({
+            userId: user._id,
+            ipAddress: req.ip,
+            deviceInfo: deviceInfo || {}
+        });
 
         // Generate token
         const token = generateToken(user._id);
@@ -93,13 +220,80 @@ router.post('/login', async (req, res) => {
                 role: user.role,
                 campusId: user.campusId,
                 phone: user.phone,
-                photoURL: user.photoURL
+                photoURL: user.photoURL,
+                status: user.status
             },
             token
         });
     } catch (error) {
         console.error("Login error:", error);
         res.status(500).json({ message: "Login failed", error: error.message });
+    }
+});
+
+// Verify OTP Only (No Login)
+router.post('/verify-otp-only', async (req, res) => {
+    try {
+        const { email, phone, otp } = req.body;
+        // Check temp user or find user by phone/email
+        let user = await User.findOne({
+            $or: [{ email: email }, { phone: phone }]
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found or OTP expired" });
+
+        if (user.otp !== otp) {
+            return res.status(400).json({ message: "Invalid OTP" });
+        }
+
+        // Mark as verified but don't clear OTP yet if we want to ensure register uses it? 
+        // Or better: clear it and set a flag.
+        user.isPhoneVerified = true;
+        // user.otp = undefined; // Keep it valid until final Register call? Or trust the frontend 'isVerified' flag?
+        // Trusting frontend is risky. Better to keep it verified in DB.
+
+        await user.save();
+        res.json({ message: "Verified successfully" });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Verify OTP & Login
+router.post('/verify-otp', async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        const user = await User.findOne({ email }).populate('campusId');
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        if (user.otp !== otp) {
+            // Allow expired if we just verified it in previous step? No.
+            return res.status(400).json({ message: "Invalid OTP" });
+        }
+
+        user.isPhoneVerified = true;
+        user.otp = undefined;
+        user.otpExpires = undefined;
+        await user.save();
+
+        const token = generateToken(user._id);
+        res.json({
+            user: {
+                _id: user._id,
+                fullName: user.fullName,
+                email: user.email,
+                role: user.role,
+                campusId: user.campusId,
+                phone: user.phone,
+                photoURL: user.photoURL,
+                status: user.status
+            },
+            token
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -111,14 +305,35 @@ router.get('/profile', verifyToken, (req, res) => {
 // Update Profile
 router.put('/profile', verifyToken, async (req, res) => {
     try {
-        const { fullName, phone, campusId } = req.body;
+        const { fullName, phone, campusId, photoURL } = req.body;
+
+        console.log("PUT /profile Body Keys:", Object.keys(req.body));
+        if (photoURL) console.log("PhotoURL Length:", photoURL.length);
+        else console.log("PhotoURL is missing or empty");
+
+        const updateData = {};
+        if (fullName) updateData.fullName = fullName;
+        if (phone) updateData.phone = phone;
+        if (campusId) updateData.campusId = campusId;
+        if (photoURL) updateData.photoURL = photoURL;
+
         const updatedUser = await User.findByIdAndUpdate(
             req.dbUser._id,
-            { fullName, phone, campusId },
+            { $set: updateData },
             { new: true }
         ).populate('campusId');
-        res.json(updatedUser);
+
+        // Debugging Response
+        res.json({
+            user: updatedUser,
+            debug: {
+                receivedKeys: Object.keys(req.body),
+                photoURLLength: photoURL ? photoURL.length : 'Missing',
+                updateDataKeys: Object.keys(updateData)
+            }
+        });
     } catch (error) {
+        console.error("Update profile error:", error);
         res.status(500).json({ message: "Failed", error: error.message });
     }
 });

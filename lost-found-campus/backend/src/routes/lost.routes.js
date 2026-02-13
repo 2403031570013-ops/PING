@@ -1,9 +1,12 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const LostItem = require("../models/LostItem");
 const User = require("../models/User");
 const verifyToken = require('../middleware/authMiddleware');
 const NodeCache = require('node-cache');
+
+const { findAndNotifyMatches } = require("../utils/matcher");
 
 // Initialize Cache (stdTTL: 60 seconds)
 const cache = new NodeCache({ stdTTL: 60 });
@@ -19,6 +22,9 @@ router.post("/", verifyToken, async (req, res) => {
 
         // Invalidate cache on new post
         cache.flushAll();
+
+        // Trigger Smart Matcher (Async, don't block response)
+        setTimeout(() => findAndNotifyMatches(item, 'lost'), 0);
 
         // Populate immediately for return
         const populatedItem = await item.populate('postedBy', 'fullName photoURL email');
@@ -39,11 +45,23 @@ router.get("/", async (req, res) => {
         }
 
         const { campusId, status, postedBy } = req.query;
-        // Be flexible with campusId matching (string or ObjectId)
         let query = {};
-        if (campusId) query.campusId = campusId;
-        if (postedBy) query.postedBy = postedBy;
-        if (req.query.resolvedBy) query.resolvedBy = req.query.resolvedBy;
+
+        // Sanitize IDs to prevent CastError 500s
+        if (campusId && mongoose.Types.ObjectId.isValid(campusId)) {
+            query.campusId = campusId;
+        }
+
+        if (postedBy) {
+            const cleanId = postedBy.replace('postedBy:', '');
+            if (mongoose.Types.ObjectId.isValid(cleanId)) {
+                query.postedBy = cleanId;
+            }
+        }
+
+        if (req.query.resolvedBy && mongoose.Types.ObjectId.isValid(req.query.resolvedBy)) {
+            query.resolvedBy = req.query.resolvedBy;
+        }
 
         // Default to 'active' unless 'all' or specific status requested
         if (status === 'all') {
@@ -114,6 +132,19 @@ router.delete("/:id", verifyToken, async (req, res) => {
         res.json({ message: "Deleted successfully" });
     } catch (err) {
         console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DEBUG: Catch-all for lost routes to find the 500 error source
+router.get("/postedBy:id", async (req, res) => {
+    console.log("[DEBUG] Weird Catch Route hit with ID:", req.params.id);
+    try {
+        const id = req.params.id.replace(':', '');
+        const items = await LostItem.find({ postedBy: id });
+        res.json(items);
+    } catch (err) {
+        console.error("[DEBUG] Weird Catch Route Error:", err);
         res.status(500).json({ error: err.message });
     }
 });

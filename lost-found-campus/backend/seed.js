@@ -24,6 +24,8 @@ const seedData = async () => {
 
         // 1. Create Campuses
         const campuses = [
+            { name: 'Parul University', location: 'Vadodara, Gujarat', adminContact: 'admin@paruluniversity.ac.in', isActive: true },
+            { name: 'VIT Vellore', location: 'Vellore, Tamil Nadu', adminContact: 'admin@vit.ac.in', isActive: true },
             { name: 'IIT Delhi', location: 'Hauz Khas, Delhi', adminContact: 'admin@iitd.ac.in', isActive: true },
             { name: 'BITS Pilani', location: 'Pilani, Rajasthan', adminContact: 'admin@bits.ac.in', isActive: true },
             { name: 'SRM University', location: 'Chennai, TN', adminContact: 'admin@srm.ac.in', isActive: true }
@@ -32,12 +34,14 @@ const seedData = async () => {
         const createdCampuses = await Campus.insertMany(campuses);
         console.log(`Seeded ${createdCampuses.length} campuses.`);
 
+        const hashedPassword = await User.hashPassword('password123');
+
         // 2. Create Users
         const adminUser = await User.findOneAndUpdate(
             { email: 'admin@example.com' },
             {
                 fullName: 'Campus Admin',
-                uid: 'admin-uid-123',
+                password: hashedPassword,
                 campusId: createdCampuses[0]._id,
                 phone: '+919999999999',
                 role: 'admin'
@@ -49,7 +53,7 @@ const seedData = async () => {
             { email: 'student@example.com' },
             {
                 fullName: 'Jane Doe',
-                uid: 'student-uid-456',
+                password: hashedPassword,
                 campusId: createdCampuses[0]._id,
                 phone: '+918888888888',
                 role: 'student'

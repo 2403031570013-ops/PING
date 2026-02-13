@@ -6,9 +6,16 @@ const ClaimSchema = new mongoose.Schema({
     claimantId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     message: String,
-    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
-});
+    proofImageUrl: { type: String, default: "" },
+    status: { type: String, enum: ["pending", "approved", "rejected", "disputed", "completed"], default: "pending" },
+    feedback: {
+        rating: Number,
+        comment: String,
+        timestamp: Date
+    },
+    handoverCode: { type: String }, // 6-digit backup code
+    adminNotes: String,
+    resolvedAt: Date
+}, { timestamps: true });
 
 module.exports = mongoose.model("Claim", ClaimSchema);

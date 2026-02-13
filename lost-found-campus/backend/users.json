@@ -1,0 +1,72 @@
+[
+  {
+    "_id": "698a406ad14c35927345a81b",
+    "fullName": "Rahul Sharma",
+    "email": "rahul@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698a406ad14c35927345a81c",
+    "fullName": "Priya Singh",
+    "email": "priya@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698a406ad14c35927345a81d",
+    "fullName": "Amit Kumar",
+    "email": "amit@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698a406ad14c35927345a81e",
+    "fullName": "Sneha Patel",
+    "email": "sneha@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698a406ad14c35927345a81f",
+    "fullName": "Admin User",
+    "email": "admin@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "admin"
+  },
+  {
+    "_id": "698a406ad14c35927345a820",
+    "fullName": "Vikram Reddy",
+    "email": "vikram@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698a406ad14c35927345a821",
+    "fullName": "Ananya Gupta",
+    "email": "ananya@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698a406ad14c35927345a822",
+    "fullName": "Rohan Mehta",
+    "email": "rohan@demo.com",
+    "password": "$2b$10$zzy2d8/VAWvc98b4zUzmMeR6pY3lOdoQ6iYcwbKzaPlGkT8I22WqG",
+    "role": "student"
+  },
+  {
+    "_id": "698be63d79423ddbd9a77192",
+    "email": "admin@example.com",
+    "fullName": "Campus Admin",
+    "role": "admin",
+    "password": "$2b$10$hWTlEGmvN7nzCyAH37.sfONu826TnkFm.bgwlnw3hR/aTy09zAmz2"
+  },
+  {
+    "_id": "698be63d79423ddbd9a77193",
+    "email": "student@example.com",
+    "fullName": "Jane Doe",
+    "role": "student",
+    "password": "$2b$10$hWTlEGmvN7nzCyAH37.sfONu826TnkFm.bgwlnw3hR/aTy09zAmz2"
+  }
+]

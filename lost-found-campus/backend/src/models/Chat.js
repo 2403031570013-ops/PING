@@ -6,13 +6,20 @@ const ChatSchema = new mongoose.Schema({
     messages: [
         {
             senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-            text: { type: String, required: true },
+            text: { type: String },
+            imageURL: { type: String },
             createdAt: { type: Date, default: Date.now }
         }
     ],
     lastMessage: { type: String },
-    itemType: { type: String }, // Optional: Keep for context if needed
-    itemId: { type: String }    // Optional: Keep for context if needed
+    lastMessageSenderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    itemType: { type: String },
+    itemId: { type: String },    // Optional: Keep for context if needed
+    unreadCounts: {
+        type: Map,
+        of: Number,
+        default: {}
+    }
 }, {
     timestamps: true,
     toJSON: { virtuals: true },

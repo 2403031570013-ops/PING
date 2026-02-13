@@ -1,0 +1,4 @@
+--- Admin Email ---
+admin@demo.com
+admin@example.com
+-------------------

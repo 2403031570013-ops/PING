@@ -22,14 +22,18 @@ import PostItemScreen from './screens/PostItemScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
 import ChatScreen from './screens/ChatScreen';
 import AdminScreen from './screens/AdminScreen';
+import AdvancedAdminDashboard from './screens/AdvancedAdminDashboard';
 import InboxScreen from './screens/InboxScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ClaimsScreen from './screens/ClaimsScreen';
 import MyItemsScreen from './screens/MyItemsScreen';
+import SecurityDeskScreen from './screens/security_mode/SecurityDeskScreen';
 
 import HistoryScreen from './screens/HistoryScreen';
+import CallHistoryScreen from './screens/CallHistoryScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import CallOverlay from './components/CallOverlay';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -81,6 +85,9 @@ async function registerForPushNotificationsAsync() {
 }
 
 function MainTabs() {
+  const { theme } = useTheme();
+  const { unreadMsgs, unreadNotifs, dbUser } = useUser();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -88,16 +95,75 @@ function MainTabs() {
           let iconName;
           if (route.name === 'Browse') iconName = focused ? 'search' : 'search-outline';
           else if (route.name === 'Inbox') iconName = focused ? 'mail' : 'mail-outline';
+          else if (route.name === 'Calls') iconName = focused ? 'call' : 'call-outline';
+          else if (route.name === 'Reports') iconName = focused ? 'file-tray-full' : 'file-tray-full-outline';
           else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: 'blue',
+        tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: 'gray',
+        tabBarStyle: {
+          backgroundColor: theme.card,
+          borderTopColor: theme.border,
+          height: Platform.OS === 'ios' ? 90 : 70,
+          paddingBottom: Platform.OS === 'ios' ? 30 : 12,
+          paddingTop: 12
+        },
+        headerStyle: {
+          backgroundColor: theme.card,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.border
+        },
+        headerTitleStyle: {
+          fontWeight: '800',
+          color: theme.text,
+          fontSize: 17
+        }
       })}
     >
-      <Tab.Screen name="Browse" component={HomeScreen} options={{ title: 'Lost & Found' }} />
-      <Tab.Screen name="Inbox" component={InboxScreen} options={{ title: 'My Chats' }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'My Account' }} />
+      <Tab.Screen
+        name="Browse"
+        component={HomeScreen}
+        options={{ title: 'Lost & Found' }}
+      />
+      <Tab.Screen
+        name="Inbox"
+        component={InboxScreen}
+        options={{
+          title: 'My Chats',
+          tabBarBadge: unreadMsgs > 0 ? unreadMsgs : null,
+          tabBarBadgeStyle: { backgroundColor: theme.primary, color: '#fff', fontSize: 10 }
+        }}
+      />
+
+      <Tab.Screen
+        name="Calls"
+        component={CallHistoryScreen}
+        options={{ title: 'Calls' }}
+      />
+
+      {dbUser?.role === 'admin' && (
+        <Tab.Screen
+          name="Reports"
+          component={AdminScreen}
+          options={{
+            title: 'Reports',
+            tabBarLabel: 'Reports'
+          }}
+        />
+      )}
+
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          title: 'My Account',
+          tabBarBadge: unreadNotifs > 0 ? (unreadNotifs > 9 ? '9+' : unreadNotifs) : null,
+          tabBarBadgeStyle: { backgroundColor: '#ef4444', color: '#fff', fontSize: 10 }
+        }}
+      />
     </Tab.Navigator>
   );
 }
@@ -156,8 +222,12 @@ function RootNavigation() {
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
 
-            {dbUser.role === 'admin' && (
-              <Stack.Screen name="Admin" component={AdminScreen} options={{ title: 'Campus Admin' }} />
+            {(dbUser.role === 'admin' || dbUser.role === 'staff') && (
+              <>
+                <Stack.Screen name="SecurityDesk" component={SecurityDeskScreen} options={{ headerShown: false }} />
+                <Stack.Screen name="Admin" component={AdminScreen} options={{ title: 'Report Moderation' }} />
+                <Stack.Screen name="AdvancedAdmin" component={AdvancedAdminDashboard} options={{ title: 'University Management Console' }} />
+              </>
             )}
           </>
         )}
@@ -168,10 +238,11 @@ function RootNavigation() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <UserProvider>
+    <UserProvider>
+      <ThemeProvider>
         <RootNavigation />
-      </UserProvider>
-    </ThemeProvider>
+        <CallOverlay />
+      </ThemeProvider>
+    </UserProvider>
   );
 }

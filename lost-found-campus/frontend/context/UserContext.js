@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../config/axios';
 import { subscribe } from '../utils/events';
+import { initiateSocket, disconnectSocket } from '../utils/socket';
 
 const UserContext = createContext();
 
@@ -32,14 +33,57 @@ export const UserProvider = ({ children }) => {
         }
     };
 
+    const [unreadMsgs, setUnreadMsgs] = useState(0);
+    const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+    const refreshBadges = async () => {
+        const token = await AsyncStorage.getItem('authToken');
+        if (!token) return;
+
+        try {
+            // Using a silent check to avoid console noise during network suspension
+            const [msgRes, notifRes] = await Promise.all([
+                apiClient.get('/chat/unread-total').catch(() => null),
+                apiClient.get('/notifications/unread-count').catch(() => null)
+            ]);
+
+            if (msgRes) setUnreadMsgs(msgRes.data.totalUnread || 0);
+            if (notifRes) setUnreadNotifs(notifRes.data.count || 0);
+        } catch (e) {
+            // Background sync failed - usually due to sleep/network change. Ignore.
+        }
+    };
+
     const logout = async () => {
         await AsyncStorage.removeItem('authToken');
         await AsyncStorage.removeItem('user');
         setDbUser(null);
+        setUnreadMsgs(0);
+        setUnreadNotifs(0);
     };
+
+    const [socket, setSocket] = useState(null);
 
     useEffect(() => {
         refreshUser();
+        refreshBadges();
+
+        if (dbUser?._id) {
+            const s = initiateSocket(dbUser._id);
+            setSocket(s);
+
+            // Listen for real-time notifications
+            s.on('new-notification', (notif) => {
+                console.log("[Context] Real-time notification received:", notif.title);
+                setUnreadNotifs(prev => prev + 1);
+                // Optionally show a toast here if you have a toast provider
+            });
+        }
+
+        // Polling for badges every 5 seconds
+        const interval = setInterval(() => {
+            if (dbUser) refreshBadges();
+        }, 5000);
 
         // Listen to global logout events (from axios 401)
         const unsubscribe = subscribe('logout', () => {
@@ -47,11 +91,21 @@ export const UserProvider = ({ children }) => {
             logout();
         });
 
-        return unsubscribe;
-    }, []);
+        return () => {
+            unsubscribe();
+            clearInterval(interval);
+            disconnectSocket();
+            setSocket(null);
+        };
+    }, [dbUser?._id]);
 
     return (
-        <UserContext.Provider value={{ dbUser, setDbUser, refreshUser, loading, logout }}>
+        <UserContext.Provider value={{
+            dbUser, setDbUser, refreshUser,
+            loading, logout,
+            unreadMsgs, unreadNotifs, refreshBadges,
+            socket
+        }}>
             {children}
         </UserContext.Provider>
     );

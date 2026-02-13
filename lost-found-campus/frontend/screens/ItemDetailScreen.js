@@ -16,25 +16,8 @@ export default function ItemDetailScreen({ route, navigation }) {
     const [showReportModal, setShowReportModal] = useState(false);
 
     // Quick contact handlers
-    const handleCall = () => {
-        const phone = item.postedBy?.phone;
-        if (phone) {
-            Linking.openURL(`tel:${phone}`);
-        } else {
-            const msg = "Phone number not available";
-            Platform.OS === 'web' ? window.alert(msg) : Alert.alert("Unavailable", msg);
-        }
-    };
-
-    const handleEmail = () => {
-        const email = item.postedBy?.email;
-        if (email) {
-            Linking.openURL(`mailto:${email}?subject=Regarding your ${itemType} item: ${item.title}`);
-        } else {
-            const msg = "Email not available";
-            Platform.OS === 'web' ? window.alert(msg) : Alert.alert("Unavailable", msg);
-        }
-    };
+    // Privacy Mode: Direct contact handlers removed.
+    // Users must communicate via in-app Chat/Call.
 
     const posterId = item.postedBy?._id || item.postedBy; // Handle populated or raw ID
     const isOwner = dbUser && posterId === dbUser._id; // Check if I own this post
@@ -168,6 +151,13 @@ export default function ItemDetailScreen({ route, navigation }) {
                             {itemType === 'lost' ? 'LOST ITEM' : 'FOUND ITEM'}
                         </Text>
                     </View>
+
+                    {item.isHighValue && (
+                        <View style={styles.highValueBadge}>
+                            <Ionicons name="shield-checkmark" size={14} color="#fff" />
+                            <Text style={styles.badgeText}>HIGH VALUE</Text>
+                        </View>
+                    )}
                 </View>
 
                 <View style={[styles.content, { backgroundColor: theme.card }]}>
@@ -181,6 +171,10 @@ export default function ItemDetailScreen({ route, navigation }) {
                         <View style={styles.metaItem}>
                             <Ionicons name="time" size={16} color="#667eea" />
                             <Text style={[styles.metaText, { color: theme.textSecondary }]}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                        </View>
+                        <View style={styles.metaItem}>
+                            <Ionicons name="pricetag" size={16} color="#667eea" />
+                            <Text style={[styles.metaText, { color: theme.textSecondary }]}>{item.category || 'Other'}</Text>
                         </View>
                     </View>
 
@@ -211,14 +205,74 @@ export default function ItemDetailScreen({ route, navigation }) {
                         */}\n
                     </View>
 
+                    {/* Visual Tracking Timeline */}
+                    <View style={styles.trackingContainer}>
+                        <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 15 }]}>System Tracking</Text>
+                        <View style={styles.timeline}>
+                            {[
+                                { status: 'Reported', date: item.createdAt, icon: 'document-text', color: theme.info, completed: true },
+                                ...(item.lifecycle || []).map(log => ({
+                                    status: log.status,
+                                    date: log.timestamp,
+                                    icon: log.status === 'locked' ? 'lock-closed' : 'git-commit',
+                                    color: log.status === 'resolved' ? theme.success : theme.primary,
+                                    completed: true,
+                                    note: log.note
+                                })),
+                                ...(item.status !== 'resolved' ? [{ status: 'Reunited', icon: 'heart', color: '#CBD5E1', completed: false }] : [])
+                            ].map((step, index, arr) => (
+                                <View key={index} style={styles.timelineItem}>
+                                    <View style={styles.timelineLeft}>
+                                        <View style={[
+                                            styles.timelineDot,
+                                            { backgroundColor: step.completed ? step.color : '#E2E8F0' }
+                                        ]}>
+                                            <Ionicons name={step.icon} size={14} color={step.completed ? '#fff' : '#94A3B8'} />
+                                        </View>
+                                        {index < arr.length - 1 && (
+                                            <View style={[
+                                                styles.timelineLine,
+                                                { backgroundColor: step.completed && arr[index + 1].completed ? step.color : '#E2E8F0' }
+                                            ]} />
+                                        )}
+                                    </View>
+                                    <View style={styles.timelineRight}>
+                                        <Text style={[
+                                            styles.timelineStatus,
+                                            { color: step.completed ? theme.text : theme.textSecondary }
+                                        ]}>
+                                            {step.status.charAt(0).toUpperCase() + step.status.slice(1)}
+                                        </Text>
+                                        {step.completed && (
+                                            <Text style={styles.timelineDate}>
+                                                {new Date(step.date).toLocaleDateString()} at {new Date(step.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </Text>
+                                        )}
+                                        {step.note && <Text style={styles.timelineNote}>"{step.note}"</Text>}
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    </View>
+
+                    {/* Action Card for Owner */}
+                    {isOwner && item.status !== 'resolved' && (
+                        <View style={[styles.ownerCard, { backgroundColor: theme.primary + '10' }]}>
+                            <Ionicons name="information-circle" size={20} color={theme.primary} />
+                            <Text style={[styles.ownerCardText, { color: theme.primary }]}>
+                                You will be notified once someone claims this item. Keep your phone handy!
+                            </Text>
+                        </View>
+                    )}
+
                     {/* Report Button */}
                     {!isOwner && (
                         <TouchableOpacity
                             style={styles.reportBtn}
                             onPress={() => setShowReportModal(true)}
                         >
-                            <Ionicons name="flag-outline" size={16} color="#ff3b30" />
-                            <Text style={styles.reportText}>Report this item</Text>
+                            <Ionicons name="flag-outline" size={16} color={theme.danger} />
+                            <Text style={[styles.reportText, { color: theme.danger }]}>Report this item</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -322,39 +376,49 @@ const styles = StyleSheet.create({
     badge: { position: 'absolute', bottom: 20, left: 20, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
     lostBadge: { backgroundColor: '#ff3b30' },
     foundBadge: { backgroundColor: '#34c759' },
-    badgeText: { color: '#fff', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
+    highValueBadge: { position: 'absolute', bottom: 20, right: 20, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#007aff', flexDirection: 'row', alignItems: 'center', gap: 5 },
+    badgeText: { color: '#fff', fontWeight: '800', fontSize: 11, letterSpacing: 1 },
 
-    content: { padding: 25, marginTop: -20, backgroundColor: '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30 },
-    title: { fontSize: 28, fontWeight: '800', color: '#1a1a1a', marginBottom: 15 },
+    trackingContainer: { marginTop: 20, padding: 20, backgroundColor: '#F8FAFC', borderRadius: 24, borderWidth: 1, borderColor: '#E2E8F0' },
+    timeline: { marginLeft: 5 },
+    timelineItem: { flexDirection: 'row', gap: 15, minHeight: 60 },
+    timelineLeft: { alignItems: 'center', width: 24 },
+    timelineDot: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
+    timelineLine: { width: 2, flex: 1, marginVertical: -5 },
+    timelineRight: { flex: 1, paddingBottom: 20 },
+    timelineStatus: { fontWeight: '700', fontSize: 15, marginBottom: 2 },
+    timelineDate: { fontSize: 12, color: '#64748B' },
+    timelineNote: { fontSize: 13, color: '#475569', marginTop: 6, fontStyle: 'italic', backgroundColor: '#fff', padding: 8, borderRadius: 8, alignSelf: 'flex-start' },
 
-    metaRow: { flexDirection: 'row', gap: 20, marginBottom: 25 },
-    metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    metaText: { color: '#666', fontSize: 14, fontWeight: '500' },
+    ownerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 20, padding: 18, borderRadius: 20 },
+    ownerCardText: { flex: 1, fontSize: 14, fontWeight: '600', lineHeight: 20 },
 
-    sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1a1a1a', marginBottom: 10, marginTop: 10 },
-    desc: { fontSize: 16, color: '#555', lineHeight: 26, marginBottom: 25 },
+    content: { padding: 25, marginTop: -35, backgroundColor: '#fff', borderTopLeftRadius: 40, borderTopRightRadius: 40, shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.05, shadowRadius: 15 },
+    title: { fontSize: 30, fontWeight: '800', color: '#0F172A', marginBottom: 15 },
 
-    profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8f9fa', padding: 15, borderRadius: 16 },
-    avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15 },
+    metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 30 },
+    metaItem: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F5F9', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
+    metaText: { color: '#475569', fontSize: 13, fontWeight: '600' },
+
+    sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 12, marginTop: 10 },
+    desc: { fontSize: 15, color: '#64748B', lineHeight: 26, marginBottom: 30 },
+
+    profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', padding: 18, borderRadius: 20, borderWidth: 1, borderColor: '#E2E8F0' },
+    avatar: { width: 55, height: 55, borderRadius: 20, marginRight: 15 },
     profileInfo: { flex: 1 },
-    profileName: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
-    profileRole: { fontSize: 13, color: '#888' },
-
-    // Quick Contact
-    quickContactRow: { flexDirection: 'row', gap: 8 },
-    quickBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e0e0e0' },
+    profileName: { fontSize: 17, fontWeight: '700', color: '#0F172A' },
+    profileRole: { fontSize: 13, color: '#64748B', marginTop: 2, fontWeight: '500' },
 
     // Report
-    reportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 15, paddingVertical: 10 },
-    reportText: { color: '#ff3b30', fontSize: 14 },
+    reportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 25, paddingVertical: 12 },
+    reportText: { fontSize: 14, fontWeight: '600' },
 
-    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-    actionRow: { flexDirection: 'row', gap: 10 },
-    actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 16, gap: 10 },
-    chatBtn: { backgroundColor: '#333', width: 60, justifyContent: 'center', alignItems: 'center' },
+    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 25, paddingBottom: Platform.OS === 'ios' ? 40 : 25, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+    actionRow: { flexDirection: 'row', gap: 15 },
+    actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 20, borderRadius: 24, gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
     flexBtn: { flex: 1 },
-    resolveBtn: { backgroundColor: '#2ecc71', width: '100%' },
-    foundBtn: { backgroundColor: '#667eea' }, // Blue/Purple for "I Found This"
-    claimBtn: { backgroundColor: '#ff9500' }, // Orange for "Claim"
-    actionBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+    resolveBtn: { backgroundColor: '#0F172A', width: '100%' },
+    foundBtn: { backgroundColor: '#4F46E5' },
+    claimBtn: { backgroundColor: '#EA580C' },
+    actionBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 });

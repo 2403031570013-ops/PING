@@ -13,21 +13,31 @@ const verifyToken = async (req, res, next) => {
     const token = authHeader.split(" ")[1];
 
     try {
+        const mongoose = require('mongoose');
+        if (mongoose.connection.readyState !== 1) {
+            return res.status(503).json({ message: "Database is currently unavailable" });
+        }
+
         const decoded = jwt.verify(token, JWT_SECRET);
 
         // Fetch user from MongoDB
         const dbUser = await User.findById(decoded.userId).populate('campusId');
 
         if (!dbUser) {
-            return res.status(401).json({ message: "User not found" });
+            return res.status(401).json({ message: "Account no longer exists" });
+        }
+
+        // Security: Immediate lockout for suspended users
+        if (dbUser.status === 'suspended') {
+            return res.status(403).json({ message: "Account suspended by administrator" });
         }
 
         req.user = decoded;
         req.dbUser = dbUser;
         next();
     } catch (error) {
-        console.error("Token verification failed:", error.message);
-        return res.status(401).json({ message: "Unauthorized: Invalid token" });
+        console.error("Auth Fail:", error.message);
+        return res.status(401).json({ message: "Token expired or invalid" });
     }
 };
 

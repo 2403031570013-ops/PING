@@ -11,26 +11,62 @@ import {
     TouchableOpacity,
     Image,
     SafeAreaView,
-    Alert
+    Alert,
+    Keyboard,
+    Modal,
+    DeviceEventEmitter
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useUser } from '../context/UserContext';
 import apiClient from '../config/axios';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '../context/ThemeContext';
+import { getSocket } from '../utils/socket';
 
 export default function ChatScreen({ route, navigation }) {
     const { itemId, otherUserId, itemType, chatId, initialMessage } = route.params || {};
-    const { dbUser } = useUser();
+    const { dbUser, refreshBadges } = useUser();
     const { theme, isDarkMode } = useTheme();
     const [messages, setMessages] = useState([]);
     const [text, setText] = useState('');
     const [loading, setLoading] = useState(true);
     const [chatData, setChatData] = useState(null);
     const [showContact, setShowContact] = useState(false);
+    const [sending, setSending] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
     const flatListRef = useRef();
     const hasAutoSent = useRef(false);
+
+    const initiateCall = (targetUser, isVideo = false) => {
+        // Use socket from context (exposed via useUser, but we need to destructure it first)
+        const contextSocket = getSocket(); // Fallback to direct import if context one is tricky here without destructuring above
+
+        if (!contextSocket) {
+            Alert.alert("Error", "Real-time connection not established.");
+            return;
+        }
+
+        console.log("Initiating call via socket:", contextSocket.id);
+
+        // Emit call event
+        contextSocket.emit('call-user', {
+            to: targetUser._id,
+            from: dbUser._id,
+            name: dbUser.fullName,
+            isVideo
+        });
+
+        // Show Premium Call Screen
+        const callDetails = { detail: { to: targetUser._id, name: targetUser.fullName, isVideo } };
+
+        if (Platform.OS === 'web') {
+            window.dispatchEvent(new CustomEvent('start-outgoing-call', callDetails));
+        } else {
+            DeviceEventEmitter.emit('start-outgoing-call', callDetails);
+        }
+    };
 
     useEffect(() => {
         const initChat = async () => {
@@ -48,6 +84,12 @@ export default function ChatScreen({ route, navigation }) {
 
                 const data = response.data;
                 setChatData(data);
+
+                if (data?._id) {
+                    apiClient.patch(`/chat/${data._id}/read`)
+                        .then(() => refreshBadges())
+                        .catch(e => console.error("Error marking read:", e));
+                }
 
                 // Auto-send initial message if exists and not sent yet
                 if (initialMessage && !hasAutoSent.current) {
@@ -75,7 +117,17 @@ export default function ChatScreen({ route, navigation }) {
                         title: otherUser.fullName || 'Chat',
                         headerStyle: { backgroundColor: theme.card },
                         headerTintColor: theme.text,
-                        headerTitleStyle: { fontWeight: 'bold' }
+                        headerTitleStyle: { fontWeight: 'bold' },
+                        headerRight: () => (
+                            <View style={{ flexDirection: 'row', gap: 15, marginRight: 10 }}>
+                                <TouchableOpacity onPress={() => initiateCall(otherUser)}>
+                                    <Ionicons name="call-outline" size={22} color={theme.primary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => initiateCall(otherUser, true)}>
+                                    <Ionicons name="videocam-outline" size={24} color={theme.primary} />
+                                </TouchableOpacity>
+                            </View>
+                        )
                     });
                 }
 
@@ -88,39 +140,100 @@ export default function ChatScreen({ route, navigation }) {
         };
         initChat();
 
-        // Poll for new messages every 5 seconds (Simple polling)
+        // Poll for new messages every 5 seconds (Fallback)
         const interval = setInterval(initChat, 5000);
-        return () => clearInterval(interval);
-    }, [chatId, itemId, otherUserId]);
 
-    const handleSend = async () => {
-        if (!text.trim()) return;
+        // Real-time Socket Listener
+        const socket = getSocket();
+        if (socket) {
+            socket.on('new-message', ({ chatId: incomingChatId, message }) => {
+                if (incomingChatId === (chatId || chatData?._id)) {
+                    setMessages(prev => {
+                        // Avoid duplicates if polling already got it
+                        if (prev.find(m => m._id === message._id)) return prev;
+                        return [...prev, message];
+                    });
+                    // Mark as read
+                    apiClient.patch(`/chat/${incomingChatId}/read`).then(() => refreshBadges());
+                }
+            });
+        }
+
+        return () => {
+            clearInterval(interval);
+            if (socket) socket.off('new-message');
+        };
+    }, [chatId, itemId, otherUserId, chatData?._id]);
+
+    const pickImage = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.7,
+        });
+
+        if (!result.canceled) {
+            handleSend(null, result.assets[0].uri);
+        }
+    };
+
+    const handleSend = async (manualText = null, imageUri = null) => {
+        const messageText = manualText !== null ? manualText : text;
+        if (!messageText?.trim() && !imageUri) return;
 
         if (!chatData) {
-            Alert.alert("Error", "Chat not initialized. Please wait or reload.");
+            Alert.alert("Error", "Chat not initialized.");
             return;
         }
 
-        const msgToSend = text.trim();
-        setText(''); // Clear input immediately
+        if (!imageUri) setText(''); // Clear text if no image
 
         // Optimistic update
         const tempMsg = {
             _id: Date.now().toString(),
             senderId: dbUser._id,
-            text: msgToSend,
+            text: messageText,
+            imageURL: imageUri, // Local URI for preview
             createdAt: new Date().toISOString(),
             pending: true
         };
         setMessages(prev => [...prev, tempMsg]);
 
+        setSending(true);
         try {
-            const response = await apiClient.post(`/chat/${chatData._id}/message`, { text: msgToSend });
-            // Update with real data from server
+            const formData = new FormData();
+            formData.append('text', messageText || "");
+
+            if (imageUri) {
+                console.log("📸 [DEBUG] Preparing image for upload:", imageUri);
+                const filename = imageUri.split('/').pop() || 'upload.jpg';
+                if (Platform.OS === 'web') {
+                    try {
+                        const res = await fetch(imageUri);
+                        const blob = await res.blob();
+                        formData.append('image', blob, filename);
+                        console.log("🌐 [WEB] Created blob for upload");
+                    } catch (fetchErr) {
+                        console.error("❌ [WEB] Fetch error for imageUri:", fetchErr);
+                        throw new Error("Could not process image for upload");
+                    }
+                } else {
+                    const match = /\.(\w+)$/.exec(filename);
+                    const type = match ? `image/${match[1]}` : `image/jpeg`;
+                    formData.append('image', { uri: imageUri, name: filename, type });
+                }
+            }
+
+            console.log("📤 [DEBUG] Sending FormData to server...");
+            const response = await apiClient.post(`/chat/${chatData._id}/message`, formData);
+            console.log("✅ [DEBUG] Server response received");
             setMessages(response.data.messages);
         } catch (error) {
-            console.error("Error sending message:", error);
-            // Remove optimistic msg or show error
+            console.error("🔥 [CHAT ERROR] Send fail:", error);
+            const errorMsg = error.response?.data?.error || error.message || "Failed to send";
+            Alert.alert("Error", errorMsg);
+        } finally {
+            setSending(false);
         }
     };
 
@@ -133,28 +246,33 @@ export default function ChatScreen({ route, navigation }) {
             const id = m._id || m;
             return id.toString() !== dbUser._id.toString();
         });
-        const avatarUrl = otherUser?.photoURL || 'https://via.placeholder.com/40';
+        const avatarUrl = otherUser?.fullName
+            ? `https://ui-avatars.com/api/?name=${otherUser.fullName}&background=random&color=fff`
+            : 'https://ui-avatars.com/api/?name=User&background=667eea&color=fff';
 
         return (
             <View style={[styles.msgContainer, isMe ? styles.myMsgContainer : styles.theirMsgContainer]}>
-                {!isMe && (
-                    <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-                )}
-
-                <LinearGradient
+                {!isMe && <Image source={{ uri: avatarUrl }} style={styles.avatar} />}<LinearGradient
                     colors={isMe ? ['#667eea', '#764ba2'] : [theme.card, theme.card]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble]}
-                >
-                    <Text style={isMe ? styles.myMsgText : [styles.theirMsgText, { color: theme.text }]}>
+                    style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble, item.imageURL && { padding: 4 }]}
+                >{item.imageURL && (<TouchableOpacity onPress={() => setSelectedImage((item.imageURL.includes('blob:') || item.imageURL.includes('file:') || item.imageURL.includes('data:') || item.imageURL.startsWith('http'))
+                    ? item.imageURL
+                    : `http://127.0.0.1:5000${item.imageURL}`)}><Image
+                        source={{
+                            uri: (item.imageURL.includes('blob:') || item.imageURL.includes('file:') || item.imageURL.includes('data:') || item.imageURL.startsWith('http'))
+                                ? item.imageURL
+                                : `http://127.0.0.1:5000${item.imageURL}`
+                        }}
+                        style={styles.msgImage}
+                        resizeMode="cover"
+                    /></TouchableOpacity>)}
+                    {item.text ? (<Text style={isMe ? styles.myMsgText : [styles.theirMsgText, { color: theme.text }]}>
                         {item.text}
-                    </Text>
-                    <Text style={[styles.timeText, isMe ? styles.myTimeText : styles.theirTimeText]}>
+                    </Text>) : null}<Text style={[styles.timeText, isMe ? styles.myTimeText : styles.theirTimeText, item.imageURL && { paddingRight: 8, paddingBottom: 4 }]}>
                         {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                </LinearGradient>
-            </View>
+                    </Text></LinearGradient></View>
         );
     };
 
@@ -204,8 +322,10 @@ export default function ChatScreen({ route, navigation }) {
                                 {showContact && (
                                     <View style={[styles.contactDetails, { borderTopColor: theme.border }]}>
                                         <View style={styles.contactRow}>
-                                            <Ionicons name="call" size={18} color="#34c759" />
-                                            <Text style={[styles.contactText, { color: theme.text }]}>{otherUser.phone || 'Not available'}</Text>
+                                            <Ionicons name="call" size={18} color={theme.textSecondary} />
+                                            <Text style={[styles.contactText, { color: theme.textSecondary, fontStyle: 'italic' }]}>
+                                                Phone number hidden for privacy. Use in-app call.
+                                            </Text>
                                         </View>
                                         <View style={styles.contactRow}>
                                             <Ionicons name="mail" size={18} color="#ff9500" />
@@ -224,6 +344,9 @@ export default function ChatScreen({ route, navigation }) {
                     style={[styles.inputWrapper, { backgroundColor: theme.card, borderTopColor: theme.border }]}
                 >
                     <View style={styles.inputContainer}>
+                        <TouchableOpacity style={styles.attachBtn} onPress={pickImage}>
+                            <Ionicons name="image-outline" size={24} color={theme.primary} />
+                        </TouchableOpacity>
                         <TextInput
                             style={[styles.input, { backgroundColor: isDarkMode ? '#333' : '#f5f6f7', color: theme.text }]}
                             value={text}
@@ -233,14 +356,34 @@ export default function ChatScreen({ route, navigation }) {
                             multiline
                         />
                         <TouchableOpacity
-                            style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
-                            onPress={handleSend}
-                            disabled={!text.trim()}
+                            style={[styles.sendBtn, (!text.trim() && !sending) && styles.sendBtnDisabled]}
+                            onPress={() => handleSend()}
+                            disabled={!text.trim() || sending}
                         >
-                            <Ionicons name="send" size={24} color={text.trim() ? "#667eea" : "#ccc"} />
+                            {sending ? (
+                                <ActivityIndicator size="small" color="#667eea" />
+                            ) : (
+                                <Ionicons name="send" size={24} color={text.trim() ? "#667eea" : "#ccc"} />
+                            )}
                         </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
+
+                {/* Full Screen Image Modal */}
+                <Modal visible={!!selectedImage} transparent={true} animationType="fade">
+                    <View style={styles.modalBg}>
+                        <TouchableOpacity style={styles.modalClose} onPress={() => setSelectedImage(null)}>
+                            <Ionicons name="close" size={32} color="#fff" />
+                        </TouchableOpacity>
+                        {selectedImage && (
+                            <Image
+                                source={{ uri: selectedImage }}
+                                style={styles.fullImage}
+                                resizeMode="contain"
+                            />
+                        )}
+                    </View>
+                </Modal>
             </LinearGradient>
         </SafeAreaView>
     );
@@ -261,6 +404,7 @@ const styles = StyleSheet.create({
     myBubble: { borderBottomRightRadius: 4 },
     theirBubble: { borderBottomLeftRadius: 4 },
 
+    msgImage: { width: 220, height: 180, borderRadius: 16, marginBottom: 5 },
     myMsgText: { color: '#fff', fontSize: 16 },
     theirMsgText: { color: '#1a1a1a', fontSize: 16 },
 
@@ -269,7 +413,8 @@ const styles = StyleSheet.create({
     theirTimeText: { color: '#999' },
 
     inputWrapper: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingBottom: Platform.OS === 'ios' ? 0 : 0 },
-    inputContainer: { flexDirection: 'row', padding: 12, alignItems: 'flex-end' },
+    inputContainer: { flexDirection: 'row', padding: 12, alignItems: 'center' },
+    attachBtn: { marginRight: 10, padding: 5 },
     input: { flex: 1, backgroundColor: '#f5f6f7', borderRadius: 24, paddingHorizontal: 20, paddingVertical: 12, maxHeight: 100, fontSize: 16, color: '#333' },
     sendBtn: { marginLeft: 10, padding: 10, justifyContent: 'center', alignItems: 'center' },
     sendBtnDisabled: { opacity: 0.7 },
@@ -278,5 +423,9 @@ const styles = StyleSheet.create({
     contactToggleText: { fontWeight: '600', color: '#667eea', fontSize: 14 },
     contactDetails: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
     contactRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 },
-    contactText: { fontSize: 14, color: '#333' }
+    contactText: { fontSize: 14, color: '#333' },
+
+    modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+    modalClose: { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10 },
+    fullImage: { width: '100%', height: '80%' }
 });

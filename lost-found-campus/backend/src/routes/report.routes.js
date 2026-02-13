@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const Report = require('../models/Report');
+const Notification = require('../models/Notification');
+const LostItem = require('../models/LostItem');
+const FoundItem = require('../models/FoundItem');
 const verifyToken = require('../middleware/authMiddleware');
 
 // Create Report
@@ -28,14 +31,27 @@ router.post('/', verifyToken, async (req, res) => {
         });
 
         await report.save();
+
+        // Notify Item Owner
+        try {
+            const Model = itemType === 'lost' ? LostItem : FoundItem;
+            const item = await Model.findById(itemId);
+            if (item && item.postedBy) {
+                await Notification.create({
+                    userId: item.postedBy,
+                    title: "Item Reported",
+                    message: "One of your posts has been reported for review.",
+                    type: 'system',
+                    data: { itemId }
+                });
+            }
+        } catch (e) { console.error("Report notification failed", e); }
+
         res.status(201).json({ message: "Report submitted. Thank you for keeping our community safe!" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
-
-const LostItem = require('../models/LostItem');
-const FoundItem = require('../models/FoundItem');
 
 // Get All Reports (Admin Only)
 router.get('/', verifyToken, async (req, res) => {
@@ -50,7 +66,7 @@ router.get('/', verifyToken, async (req, res) => {
 
         const enrichedReports = await Promise.all(reports.map(async (r) => {
             const Model = r.itemType === 'lost' ? LostItem : FoundItem;
-            const item = await Model.findById(r.itemId).select('title image');
+            const item = await Model.findById(r.itemId).select('title image postedBy').populate('postedBy', 'fullName email _id');
             return {
                 ...r.toObject(),
                 itemDetails: item || { title: 'Item Deleted', image: null }

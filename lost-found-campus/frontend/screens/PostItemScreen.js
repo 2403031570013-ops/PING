@@ -157,6 +157,31 @@ export default function PostItemScreen({ navigation, route }) {
                 </View>
 
                 <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: theme.text }]}>Category</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesContainer}>
+                        {CATEGORIES.map((cat) => (
+                            <TouchableOpacity
+                                key={cat}
+                                style={[
+                                    styles.categoryChip,
+                                    category === cat && (type === 'found' ? { backgroundColor: '#34c759', borderColor: '#34c759' } : { backgroundColor: '#ff3b30', borderColor: '#ff3b30' }),
+                                    category !== cat && { backgroundColor: theme.card, borderColor: theme.border }
+                                ]}
+                                onPress={() => setCategory(cat)}
+                            >
+                                <Text style={{
+                                    fontSize: 14,
+                                    fontWeight: category === cat ? '700' : '500',
+                                    color: category === cat ? '#fff' : theme.text
+                                }}>
+                                    {cat}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+
+                <View style={styles.inputGroup}>
                     <Text style={[styles.label, { color: theme.text }]}>Description</Text>
                     <TextInput
                         style={[styles.input, styles.textArea, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
@@ -212,4 +237,7 @@ const styles = StyleSheet.create({
     submitLost: { backgroundColor: '#ff3b30' },
     submitFound: { backgroundColor: '#34c759' },
     submitBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+
+    categoriesContainer: { flexDirection: 'row', gap: 10, paddingVertical: 5 },
+    categoryChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, marginRight: 8 },
 });

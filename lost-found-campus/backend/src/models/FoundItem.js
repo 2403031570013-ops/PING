@@ -8,7 +8,16 @@ const FoundItemSchema = new mongoose.Schema({
     category: { type: String, default: 'Others' },
     campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus' },
     postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    status: { type: String, enum: ['active', 'resolved', 'expired'], default: 'active' },
+    status: { type: String, enum: ['active', 'resolved', 'expired', 'locked'], default: 'active' },
+    isHighValue: { type: Boolean, default: false },
+    adminNotes: { type: String, default: "" },
+    cctvReference: { type: String, default: "" },
+    lifecycle: [{
+        status: String,
+        updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        timestamp: { type: Date, default: Date.now },
+        note: String
+    }],
     resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     createdAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } // 30 days

@@ -8,9 +8,16 @@ const userSchema = new mongoose.Schema({
     phone: { type: String, default: "" },
     photoURL: { type: String, default: "" },
     campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus' },
-    role: { type: String, enum: ['student', 'admin'], default: 'student' },
+    role: { type: String, enum: ['student', 'staff', 'admin'], default: 'student' },
+    isApproved: { type: Boolean, default: true }, // For staff/admin approval flow
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     pushToken: { type: String, default: "" },
-    karmaPoints: { type: Number, default: 0 }
+    karmaPoints: { type: Number, default: 0 },
+    academicYear: { type: String }, // e.g., '2024-25'
+    semester: { type: Number },
+    isPhoneVerified: { type: Boolean, default: false },
+    otp: { type: String },
+    otpExpires: { type: Date }
 }, { timestamps: true });
 
 // Compare password method

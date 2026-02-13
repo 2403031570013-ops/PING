@@ -2,9 +2,31 @@ const express = require('express');
 const router = express.Router();
 const Chat = require('../models/Chat');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 const { Expo } = require("expo-server-sdk");
 const expo = new Expo();
 const verifyToken = require('../middleware/authMiddleware');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Multer Storage Configuration
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = path.join(__dirname, '..', '..', 'uploads', 'chat');
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `chat_${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
 // POST /api/chat - Create or Get Chat
 router.post('/', verifyToken, async (req, res) => {
@@ -87,7 +109,8 @@ router.get('/', verifyToken, async (req, res) => {
     try {
         const chats = await Chat.find({ members: req.dbUser._id })
             .populate('members', 'fullName photoURL email phone')
-            .sort({ updatedAt: -1 });
+            .sort({ updatedAt: -1 })
+            .lean();
         res.json(chats);
     } catch (err) {
         console.error("Error fetching chats:", err);
@@ -95,12 +118,41 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
+// GET /api/chat/unread-total - Get total unread messages count across all chats
+router.get('/unread-total', verifyToken, async (req, res) => {
+    try {
+        const chats = await Chat.find({ members: req.dbUser._id });
+        let totalUnread = 0;
+
+        chats.forEach(chat => {
+            const counts = chat.unreadCounts;
+            if (counts) {
+                if (typeof counts.get === 'function') {
+                    totalUnread += (counts.get(req.dbUser._id.toString()) || 0);
+                } else {
+                    totalUnread += (counts[req.dbUser._id.toString()] || 0);
+                }
+            }
+        });
+
+        res.json({ totalUnread });
+    } catch (err) {
+        console.error("Error getting unread total:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/chat/:chatId - Get Single Chat
 router.get('/:chatId', verifyToken, async (req, res) => {
     try {
-        const chat = await Chat.findById(req.params.chatId)
-            .populate('members', 'fullName photoURL email phone');
-        if (!chat) return res.status(404).json({ error: "Chat not found" });
+        if (!mongoose.isValidObjectId(req.params.chatId)) {
+            return res.status(400).json({ error: "Invalid Chat ID format" });
+        }
+
+        const chat = await Chat.findOne({ _id: req.params.chatId, members: req.dbUser._id })
+            .populate('members', 'fullName photoURL email phone')
+            .lean();
+        if (!chat) return res.status(404).json({ error: "Chat not found or access denied" });
         res.json(chat);
     } catch (err) {
         console.error("Error fetching chat:", err);
@@ -108,27 +160,72 @@ router.get('/:chatId', verifyToken, async (req, res) => {
     }
 });
 
-// POST /api/chat/:chatId/message - Send Message
-router.post('/:chatId/message', verifyToken, async (req, res) => {
+router.post('/:chatId/message', verifyToken, upload.single('image'), async (req, res) => {
+    console.log("--- DEBUG CHAT MESSAGE ---");
+    console.log("Method:", req.method);
+    console.log("ChatId:", req.params.chatId);
+    console.log("Body Keys:", Object.keys(req.body));
+    console.log("File:", req.file ? req.file.originalname : "No file");
+    console.log("--------------------------");
     try {
         const { text } = req.body;
-        if (!text) return res.status(400).json({ error: "Message text required" });
+        const imageURL = req.file ? `/uploads/chat/${req.file.filename}` : null;
 
-        const chat = await Chat.findById(req.params.chatId);
-        if (!chat) return res.status(404).json({ error: "Chat not found" });
+        if (!text && !imageURL) return res.status(400).json({ error: "Message text or image required" });
+
+        if (!mongoose.isValidObjectId(req.params.chatId)) {
+            return res.status(400).json({ error: "Invalid Chat ID format" });
+        }
+
+        const chat = await Chat.findOne({ _id: req.params.chatId, members: req.dbUser._id });
+        if (!chat) return res.status(404).json({ error: "Chat not found or access denied" });
 
         const newMessage = {
             senderId: req.dbUser._id,
             text,
+            imageURL,
             createdAt: new Date()
         };
 
         chat.messages.push(newMessage);
-        chat.lastMessage = text;
-        chat.updatedAt = new Date(); // Update timestamp
+        chat.lastMessage = text || "Shared a photo";
+        chat.lastMessageSenderId = req.dbUser._id;
+        chat.updatedAt = new Date();
+
+        // Increment unread counts for recipient(s)
+        if (!chat.unreadCounts) {
+            chat.unreadCounts = new Map();
+        }
+        chat.members.forEach(memberId => {
+            if (memberId.toString() !== req.dbUser._id.toString()) {
+                const currentCount = chat.unreadCounts.get(memberId.toString()) || 0;
+                chat.unreadCounts.set(memberId.toString(), currentCount + 1);
+            }
+        });
+
+        chat.markModified('unreadCounts');
         await chat.save();
 
         console.log(`📩 Message sent in chat ${chat._id}`);
+
+        // Real-time Socket.io Emit
+        const io = req.app.get('io');
+        const users = req.app.get('users');
+        if (io && users) {
+            chat.members.forEach(memberId => {
+                const userIdStr = memberId.toString();
+                if (userIdStr !== req.dbUser._id.toString()) {
+                    const socketId = users[userIdStr];
+                    if (socketId) {
+                        console.log(`📡 Emitting new-message to user ${userIdStr} (socket ${socketId})`);
+                        io.to(socketId).emit('new-message', {
+                            chatId: chat._id,
+                            message: chat.messages[chat.messages.length - 1]
+                        });
+                    }
+                }
+            });
+        }
 
         // Push Notification Logic
         try {
@@ -157,6 +254,30 @@ router.post('/:chatId/message', verifyToken, async (req, res) => {
     }
 });
 
-const mongoose = require('mongoose'); // Needed for isValidObjectId check
+// PATCH /api/chat/:chatId/read - Mark Chat as Read
+router.patch('/:chatId/read', verifyToken, async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.chatId)) {
+            return res.status(400).json({ error: "Invalid Chat ID format" });
+        }
+
+        const chat = await Chat.findOne({ _id: req.params.chatId, members: req.dbUser._id });
+        if (!chat) return res.status(404).json({ error: "Chat not found or access denied" });
+
+        // Reset count for current user
+        if (!chat.unreadCounts) {
+            chat.unreadCounts = new Map();
+        }
+        chat.unreadCounts.set(req.dbUser._id.toString(), 0);
+        chat.markModified('unreadCounts');
+        await chat.save();
+
+        res.json({ message: "Read status updated" });
+    } catch (err) {
+        console.error("Error marking chat as read:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 module.exports = router;

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, Image, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Image, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import apiClient from '../config/axios';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../context/ThemeContext';
 
 export default function LeaderboardScreen() {
+    const { theme } = useTheme();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -14,8 +16,9 @@ export default function LeaderboardScreen() {
 
     const fetchLeaderboard = async () => {
         try {
-            const response = await apiClient.get('/auth/leaderboard');
-            setUsers(response.data);
+            // Updated endpoint to match backend route
+            const response = await apiClient.get('/admin-mgmt/leaderboard');
+            setUsers(response.data || []);
         } catch (error) {
             console.error("Leaderboard error:", error);
         } finally {
@@ -24,48 +27,45 @@ export default function LeaderboardScreen() {
     };
 
     const renderItem = ({ item, index }) => {
-        let podColor = '#fff';
-        let rankBadge = null;
-
-        if (index === 0) {
-            podColor = '#fffbe6'; // Gold-ish
-            rankBadge = '🥇';
-        } else if (index === 1) {
-            podColor = '#f5f5f5'; // Silver-ish
-            rankBadge = '🥈';
-        } else if (index === 2) {
-            podColor = '#fff5e6'; // Bronze-ish
-            rankBadge = '🥉';
-        }
+        const isPodium = index < 3;
+        const podiumColors = ['#F59E0B', '#94A3B8', '#B45309']; // Gold, Silver, Bronze
+        const podiumIcons = ['🥇', '🥈', '🥉'];
 
         return (
-            <View style={[styles.card, { backgroundColor: podColor }]}>
+            <View style={[styles.card, { backgroundColor: theme.card }]}>
                 <View style={styles.rankCol}>
-                    <Text style={styles.rankText}>{rankBadge || `#${index + 1}`}</Text>
+                    {isPodium ? (
+                        <Text style={styles.podiumText}>{podiumIcons[index]}</Text>
+                    ) : (
+                        <Text style={[styles.rankText, { color: theme.textSecondary }]}>#{index + 1}</Text>
+                    )}
                 </View>
+
                 <Image
-                    source={{ uri: item.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName)}&background=random` }}
-                    style={styles.avatar}
+                    source={{ uri: item.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName)}&background=F1F5F9&color=64748B&bold=true` }}
+                    style={[styles.avatar, isPodium && { borderColor: podiumColors[index], borderWidth: 2 }]}
                 />
+
                 <View style={styles.infoCol}>
-                    <Text style={styles.name} numberOfLines={1}>{item.fullName}</Text>
-                    <Text style={styles.role}>{item.role || 'Student'}</Text>
+                    <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>{item.fullName}</Text>
+                    <Text style={[styles.role, { color: theme.textSecondary }]}>{item.role || 'Student'}</Text>
                 </View>
-                <View style={styles.karmaCol}>
-                    <Ionicons name="star" size={16} color="#f1c40f" />
-                    <Text style={styles.karmaText}>{item.karmaPoints || 0}</Text>
+
+                <View style={[styles.karmaCol, { backgroundColor: theme.primary + '10' }]}>
+                    <Ionicons name="sparkles" size={14} color={theme.primary} />
+                    <Text style={[styles.karmaText, { color: theme.primary }]}>{item.karmaPoints || 0}</Text>
                 </View>
             </View>
         );
     };
 
-    if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#667eea" /></View>;
+    if (loading) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
 
     return (
-        <View style={styles.container}>
-            <LinearGradient colors={['#667eea', '#764ba2']} style={styles.header}>
-                <Text style={styles.title}>🏆 Campus Heroes</Text>
-                <Text style={styles.subtitle}>Top contributors making our campus safer!</Text>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
+            <LinearGradient colors={theme.primaryGradient} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={styles.headerTitle}>Campus Heroes</Text>
+                <Text style={styles.headerSub}>Top contributors making our campus safer</Text>
             </LinearGradient>
 
             <FlatList
@@ -74,25 +74,49 @@ export default function LeaderboardScreen() {
                 renderItem={renderItem}
                 contentContainerStyle={styles.list}
                 showsVerticalScrollIndicator={false}
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                        <Ionicons name="trophy-outline" size={60} color="#CBD5E1" />
+                        <Text style={[styles.emptyTitle, { color: theme.text }]}>No records yet</Text>
+                        <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Be the first to help someone and top the leadboard!</Text>
+                    </View>
+                }
             />
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f0f2f5' },
+    container: { flex: 1 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { padding: 20, paddingTop: 50, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, alignItems: 'center', marginBottom: 10 },
-    title: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginBottom: 5 },
-    subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
-    list: { padding: 15 },
-    card: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 15, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-    rankCol: { width: 40, alignItems: 'center', justifyContent: 'center' },
-    rankText: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-    avatar: { width: 50, height: 50, borderRadius: 25, marginHorizontal: 10 },
+    header: { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20, alignItems: 'center' },
+    headerTitle: { fontSize: 24, fontWeight: '800', color: '#fff' },
+    headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 4, fontWeight: '500' },
+    list: { padding: 15, paddingBottom: 100 },
+
+    card: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 16,
+        marginBottom: 10,
+        ...Platform.select({
+            web: { boxShadow: '0 4px 12px rgba(0,0,0,0.03)' },
+            default: { elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }
+        })
+    },
+    rankCol: { width: 40, alignItems: 'center' },
+    podiumText: { fontSize: 20 },
+    rankText: { fontSize: 13, fontWeight: '800' },
+    avatar: { width: 44, height: 44, borderRadius: 18, marginHorizontal: 10, backgroundColor: '#F1F5F9' },
     infoCol: { flex: 1 },
-    name: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-    role: { fontSize: 12, color: '#666', textTransform: 'capitalize' },
-    karmaCol: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#eee' },
-    karmaText: { fontSize: 14, fontWeight: 'bold', marginLeft: 5, color: '#333' }
+    name: { fontSize: 15, fontWeight: '800' },
+    role: { fontSize: 12, fontWeight: '500', marginTop: 2, textTransform: 'capitalize' },
+    karmaCol: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+    karmaText: { fontSize: 14, fontWeight: '800' },
+
+    emptyContainer: { alignItems: 'center', marginTop: 100, paddingHorizontal: 40 },
+    emptyTitle: { fontSize: 18, fontWeight: '800', marginTop: 20, marginBottom: 8 },
+    emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 22, fontWeight: '500' },
 });
+
