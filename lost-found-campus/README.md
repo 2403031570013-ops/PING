@@ -46,22 +46,24 @@ A production-grade, multi-campus university trust system built for students to r
 
 ## 🚀 Deployment Guide
 
-### 1. Backend Ignite
-```bash
-cd backend
-npm install
-node seed.js  # Build university list & demo content
-npm run dev   # Start the Express engine (Default: Port 5000)
-```
+### Local Development
+1. **Backend**: `cd backend && npm install && node seed.js && npm run dev`
+2. **Frontend**: `cd frontend && npm install && npx expo start`
 
-### 2. Frontend Launch
-```bash
-cd frontend
-npm install
-npx expo start
-```
+### Production Deployment
 
-*Note: For testing on physical devices, update the `baseURL` in `frontend/config/axios.js` to your machine's local IP.*
+#### 1. Backend (Render.com / Railway)
+- **Environment Variables**:
+  - `MONGO_URI`: Your MongoDB connection string.
+  - `JWT_SECRET`: A strong random key.
+- **Build Command**: `npm install`
+- **Start Command**: `npm start`
+
+#### 2. Frontend (Vercel / Netlify)
+- **Environment Variables**:
+  - `EXPO_PUBLIC_API_URL`: Your backend URL (e.g., `https://api.yourdomain.com/api`).
+- **Build Command**: `npm run build`
+- **Output Directory**: `web-build`
 
 ---
 
