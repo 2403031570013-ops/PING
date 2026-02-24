@@ -1,77 +1,114 @@
-# 🎓 Lost & Found Campus
+# 🦅 Lost & Found Campus - Complete System
 
-A production-grade, multi-campus university trust system built for students to report lost and found items within their college community. Featuring a modern technical stack and premium UX.
+Welcome to the **production-ready** source code for the "Lost & Found Campus" platform.
 
-## 🌟 Key Features
+## 📂 Project Structure
 
-- **Multi-Campus Isolation**: Secure data segmentation ensures students only see items relevant to their campus.
-- **Push Notifications**: Instant alerts powered by Expo Notifications whenever a user receives a new chat message.
-- **Real-Time Messaging**: Built-in communication layer for finders and owners to coordinate returns safely.
-- **Axios Networking**: Centralized API client with automatic Firebase Token injection and interceptors.
-- **Admin Dashboard**: Secure moderation panel for campus staff to manage and curate cross-platform reports.
-- **Modern UI/UX**: Feature-rich interface with dual-feed tabs, real-time search, pull-to-refresh, and status tracking.
-
-## 🛠 Tech Stack
-
-- **Mobile**: React Native (Expo SDK 54), React Navigation, Axios.
-- **Backend**: Node.js, Express, MongoDB Cloud (Mongoose).
-- **Communication**: Expo Server SDK (Push Notifications).
-- **Security**: Firebase Admin SDK (JWT Validation) & Firebase Client Auth.
-- **Storage**: Firebase Storage (Secure Cloud Photo Hosting).
-
----
-
-## 📂 Project Architecture
-
-### `/frontend`
-- `config/axios.js`: Centralized network engine with request interceptors.
-- `context/UserContext.js`: Global state orchestration for user synchronization.
-- `screens/`:
-  - `LoginScreen.js`: Secure email/password entry.
-  - `CampusSelectScreen.js`: One-time university onboarding.
-  - `HomeScreen.js`: High-performance dual-feed (Lost/Found).
-  - `InboxScreen.js`: Personalized communication hub.
-  - `ChatScreen.js`: Real-time conversation interface with push delivery.
-  - `PostItemScreen.js`: Multi-step reporting flow with image picking.
-  - `AdminScreen.js`: Protected dashboard for items moderation.
-
-### `/backend`
-- `src/app.js`: Unified entry point.
-- `src/controllers/`: Business logic (Chat, Auth, Items).
-- `src/models/`: Simplified, high-performance Mongoose schemas.
-- `src/middleware/`: JWT verification and role-based access control.
-- `seed.js`: Intelligent script for populating campuses and demo data.
+```
+lost-found-campus/
+├── backend/                # Node.js + Express API Server
+│   ├── src/
+│   │   ├── config/         # DB Connection & Passport
+│   │   ├── controllers/    # Route Logic (if separated)
+│   │   ├── middleware/     # Auth, RBAC, Validation
+│   │   ├── models/         # Mongoose Schemas (User, LostItem, etc.)
+│   │   ├── routes/         # Express Routes (Auth, Report, Chat, Admin)
+│   │   ├── utils/          # Matcher Algorithm, Email, etc.
+│   │   └── app.js          # Entry Point & Socket.io Setup
+│   ├── uploads/            # Local Image Storage (use S3 for Prod)
+│   ├── .env.example        # Sample Environment Variables
+│   └── package.json
+│
+├── frontend/               # React Native (Expo) App + Web Dashboard
+│   ├── assets/             # Images & Fonts
+│   ├── components/         # Reusable UI (Buttons, Cards, Inputs)
+│   ├── config/             # Axios & API Setup
+│   ├── context/            # Global State (User, Theme)
+│   ├── navigation/         # React Navigation Stacks
+│   ├── screens/            # Application Screens (Home, Profile, Security)
+│   │   ├── security_mode/  # Specific UI for Guards
+│   │   └── ...
+│   ├── utils/              # Socket.io Client, Helpers
+│   ├── App.js              # Main App Entry
+│   ├── app.json            # Expo Configuration
+│   └── package.json
+│
+├── DEPLOYMENT.md           # Step-by-step deploy guide
+└── PROJECT_FEATURES.md     # Feature list & specifications
+```
 
 ---
 
-## 🚀 Deployment Guide
+## 🚀 Quick Start (Local Development)
 
-### Local Development
-1. **Backend**: `cd backend && npm install && node seed.js && npm run dev`
-2. **Frontend**: `cd frontend && npm install && npx expo start`
+### Prerequisites
+*   Node.js (v18+)
+*   MongoDB Atlas Account
+*   Expo Go App on your phone
 
-### Production Deployment
+### 1. Backend Setup
+1.  Navigate to `backend/`:
+    ```bash
+    cd backend
+    npm install
+    ```
+2.  Create a `.env` file (copy from `.env.example`):
+    ```env
+    MONGO_URI=mongodb+srv://...
+    JWT_SECRET=your_super_secret_key
+    PORT=5000
+    ```
+3.  Start the server:
+    ```bash
+    npm start
+    ```
+    *(Backend runs on http://localhost:5000)*
 
-#### 1. Backend (Render.com / Railway)
-- **Environment Variables**:
-  - `MONGO_URI`: Your MongoDB connection string.
-  - `JWT_SECRET`: A strong random key.
-- **Build Command**: `npm install`
-- **Start Command**: `npm start`
-
-#### 2. Frontend (Vercel / Netlify)
-- **Environment Variables**:
-  - `EXPO_PUBLIC_API_URL`: Your backend URL (e.g., `https://api.yourdomain.com/api`).
-- **Build Command**: `npm run build`
-- **Output Directory**: `web-build`
+### 2. Frontend Setup
+1.  Navigate to `frontend/`:
+    ```bash
+    cd frontend
+    npm install
+    ```
+    *(If you face legacy peer dep issues, use `npm install --legacy-peer-deps`)*
+2.  Start Expo:
+    ```bash
+    npx expo start
+    ```
+3.  Scan the QR code with **Expo Go** (Android/iOS) or press `w` for Web Dashboard.
 
 ---
 
-## 👨‍💼 Administrator Privileges
-The system includes a secure role-based access control (RBAC).
-1. Run `node seed.js` to create a default admin user (`demo@example.com`).
-2. Logging in with this user enables the **ADMIN PANEL** badge on the home feed.
-3. Admins have global deletion rights for their specific campus items.
+## 🔑 Default Credentials (After Seeding)
 
-## 📄 License
-Engineering excellence for the university community.
+**Admin User:**
+*   Email: `admin@paruluniversity.ac.in`
+*   Password: `admin` (or whatever set in `seed.js`)
+
+**Security User:**
+*   Email: `security@paruluniversity.ac.in`
+*   Password: `security`
+
+---
+
+## 🛠️ Security Features Implemented
+*   **JWT Auth**: Secure stateless authentication.
+*   **RBAC**: Middleware ensures Students cannot access Admin API.
+*   **Suspension**: Immediate lockout for banned users.
+*   **Input Sanitization**: All MongoDB queries use Mongoose to prevent injection.
+*   **Rate Limiting**: API is protected against brute force.
+*   **Audit Logging**: Every sensitive admin action is logged permanently.
+
+---
+
+## 📱 Features Checklist
+- [x] Smart Matching Algorithm (Keyword/Location/Time)
+- [x] Multi-Campus Isolation
+- [x] Secure Claim System (Proof Upload & OTP Handover)
+- [x] Karma Points & Leaderboard
+- [x] In-App Chat (Real-time Socket.io)
+- [x] Security Desk Module (Quick Log & Auto-Notify)
+- [x] Push Notifications (Expo)
+- [x] Admin Dashboard (Stats, User Management, CSV Export)
+
+This system is built to be **scalable** and **secure**.

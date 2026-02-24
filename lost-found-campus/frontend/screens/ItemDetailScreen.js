@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, StatusBar, Platform, Share, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, StatusBar, Platform, Share, Linking, Modal } from 'react-native';
 import { useUser } from '../context/UserContext';
 import apiClient from '../config/axios';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ReportModal from '../components/ReportModal';
+import ReportUserModal from '../components/ReportUserModal';
 
 import { useTheme } from '../context/ThemeContext';
 
@@ -13,21 +14,44 @@ export default function ItemDetailScreen({ route, navigation }) {
     const { dbUser } = useUser();
     const { theme, isDarkMode } = useTheme();
     const [loading, setLoading] = useState(false);
+    const [deleteLoading, setDeleteLoading] = useState(false);
     const [showReportModal, setShowReportModal] = useState(false);
+    const [showReportUserModal, setShowReportUserModal] = useState(false);
 
     // Quick contact handlers
     // Privacy Mode: Direct contact handlers removed.
     // Users must communicate via in-app Chat/Call.
 
     const posterId = item.postedBy?._id || item.postedBy; // Handle populated or raw ID
-    const isOwner = dbUser && posterId === dbUser._id; // Check if I own this post
+    const isOwner = dbUser && (posterId === dbUser._id || posterId === dbUser._id?.toString()); // Check if I own this post
+    const [myClaim, setMyClaim] = useState(null);
+
+    useEffect(() => {
+        const checkClaim = async () => {
+            if (!isOwner && dbUser) {
+                try {
+                    const res = await apiClient.get('/claims/sent');
+                    const existing = res.data.find(c => (c.itemId?._id === item._id || c.itemId === item._id) && c.status === 'pending');
+                    if (existing) setMyClaim(existing);
+                } catch (e) { console.log(e); }
+            }
+        };
+        checkClaim();
+    }, [item._id, isOwner, dbUser]);
 
     // After population, postedBy is an object.
     // If it's still an ID string (legacy), we handle that too.
     const poster = item.postedBy || {};
-    // const posterId = poster._id || poster; // Handle both populated and unpopulated // This line is replaced by the new posterId logic above
     const posterName = poster.fullName || 'Unknown User';
-    const posterPhoto = poster.photoURL || `https://ui-avatars.com/api/?name=${posterName}&background=random`;
+    const posterPhoto = poster.photoURL ? (poster.photoURL.startsWith('http') || poster.photoURL.startsWith('data:') ? poster.photoURL : `http://127.0.0.1:5000${poster.photoURL}`) : `https://ui-avatars.com/api/?name=${posterName}&background=random`;
+
+    const [selectedImage, setSelectedImage] = useState(null);
+
+    const getImageUrl = (url) => {
+        if (!url) return 'https://via.placeholder.com/400';
+        if (url.startsWith('http') || url.startsWith('data:')) return url;
+        return `http://127.0.0.1:5000${url}`;
+    };
 
     const handleShare = async () => {
         try {
@@ -92,6 +116,40 @@ export default function ItemDetailScreen({ route, navigation }) {
         }
     };
 
+    const handleDelete = async () => {
+        const doDelete = async () => {
+            setDeleteLoading(true);
+            try {
+                await apiClient.delete(`/${itemType}/${item._id}`);
+                const msg = 'Post deleted successfully!';
+                if (Platform.OS === 'web') window.alert(msg);
+                else Alert.alert('Deleted', msg);
+                navigation.goBack();
+            } catch (error) {
+                const errMsg = error.response?.data?.message || 'Failed to delete post.';
+                if (Platform.OS === 'web') window.alert(errMsg);
+                else Alert.alert('Error', errMsg);
+            } finally {
+                setDeleteLoading(false);
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+                await doDelete();
+            }
+        } else {
+            Alert.alert(
+                'Delete Post',
+                'Are you sure you want to delete this post? This action cannot be undone.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: doDelete }
+                ]
+            );
+        }
+    };
+
     const handleAction = () => {
         // If Lost Item -> "I Found This"
         // If Found Item -> "This is Mine"
@@ -136,7 +194,9 @@ export default function ItemDetailScreen({ route, navigation }) {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Image Header */}
                 <View style={styles.imageContainer}>
-                    <Image source={{ uri: item.image || 'https://via.placeholder.com/400' }} style={styles.image} />
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => setSelectedImage(getImageUrl(item.image))}>
+                        <Image source={{ uri: getImageUrl(item.image) }} style={styles.image} />
+                    </TouchableOpacity>
 
                     <TouchableOpacity style={[styles.backBtn, { backgroundColor: theme.card }]} onPress={() => navigation.goBack()}>
                         <Ionicons name="arrow-back" size={24} color={theme.text} />
@@ -148,16 +208,36 @@ export default function ItemDetailScreen({ route, navigation }) {
 
                     <View style={[styles.badge, itemType === 'found' ? styles.foundBadge : styles.lostBadge]}>
                         <Text style={styles.badgeText}>
-                            {itemType === 'lost' ? 'LOST ITEM' : 'FOUND ITEM'}
+                            {itemType === 'lost' ? 'MISSING' : 'FOUND'}
                         </Text>
                     </View>
 
-                    {item.isHighValue && (
-                        <View style={styles.highValueBadge}>
-                            <Ionicons name="shield-checkmark" size={14} color="#fff" />
-                            <Text style={styles.badgeText}>HIGH VALUE</Text>
-                        </View>
-                    )}
+                    <View style={{ position: 'absolute', bottom: 20, right: 20, alignItems: 'flex-end', gap: 8 }}>
+                        {item.bounty > 0 && (
+                            <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#FFD700', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                <Ionicons name="cash" size={14} color="#000" />
+                                <Text style={{ color: '#000', fontWeight: '800', fontSize: 11 }}>Reward: ₹{item.bounty}</Text>
+                            </View>
+                        )}
+                        {item.isInsured && (
+                            <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#10B981', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                <Ionicons name="shield-checkmark" size={14} color="#fff" />
+                                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 11 }}>INSURED</Text>
+                            </View>
+                        )}
+                        {item.priority === 'high' && (
+                            <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#EF4444', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                <Ionicons name="alert-circle" size={14} color="#fff" />
+                                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 11 }}>URGENT</Text>
+                            </View>
+                        )}
+                        {item.isHighValue && (
+                            <View style={styles.highValueBadge}>
+                                <Ionicons name="star" size={14} color="#fff" />
+                                <Text style={styles.badgeText}>HIGH VALUE</Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
 
                 <View style={[styles.content, { backgroundColor: theme.card }]}>
@@ -207,7 +287,7 @@ export default function ItemDetailScreen({ route, navigation }) {
 
                     {/* Visual Tracking Timeline */}
                     <View style={styles.trackingContainer}>
-                        <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 15 }]}>System Tracking</Text>
+                        <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 15 }]}>Item Journey</Text>
                         <View style={styles.timeline}>
                             {[
                                 { status: 'Reported', date: item.createdAt, icon: 'document-text', color: theme.info, completed: true },
@@ -265,20 +345,43 @@ export default function ItemDetailScreen({ route, navigation }) {
                         </View>
                     )}
 
-                    {/* Report Button */}
-                    {!isOwner && (
+                    {/* Delete Post Button (Owner Only) */}
+                    {isOwner && (
                         <TouchableOpacity
-                            style={styles.reportBtn}
-                            onPress={() => setShowReportModal(true)}
+                            style={styles.deletePostBtn}
+                            onPress={handleDelete}
+                            disabled={deleteLoading}
                         >
-                            <Ionicons name="flag-outline" size={16} color={theme.danger} />
-                            <Text style={[styles.reportText, { color: theme.danger }]}>Report this item</Text>
+                            <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                            <Text style={styles.deletePostText}>
+                                {deleteLoading ? 'Deleting...' : 'Delete this post'}
+                            </Text>
                         </TouchableOpacity>
+                    )}
+
+                    {/* Report Buttons */}
+                    {!isOwner && (
+                        <View style={{ gap: 8, marginTop: 10 }}>
+                            <TouchableOpacity
+                                style={styles.reportBtn}
+                                onPress={() => setShowReportModal(true)}
+                            >
+                                <Ionicons name="flag-outline" size={16} color={theme.danger || '#EF4444'} />
+                                <Text style={[styles.reportText, { color: theme.danger || '#EF4444' }]}>Report this post</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.reportBtn, { borderColor: '#F97316' }]}
+                                onPress={() => setShowReportUserModal(true)}
+                            >
+                                <Ionicons name="person-remove-outline" size={16} color="#F97316" />
+                                <Text style={[styles.reportText, { color: '#F97316' }]}>Report this user's account</Text>
+                            </TouchableOpacity>
+                        </View>
                     )}
                 </View>
             </ScrollView>
 
-            {/* Report Modal */}
+            {/* Report Item Modal */}
             <ReportModal
                 visible={showReportModal}
                 onClose={() => setShowReportModal(false)}
@@ -286,23 +389,48 @@ export default function ItemDetailScreen({ route, navigation }) {
                 itemType={itemType}
             />
 
+            {/* Report User Modal */}
+            <ReportUserModal
+                visible={showReportUserModal}
+                onClose={() => setShowReportUserModal(false)}
+                reportedUserId={posterId}
+                reportedUserName={posterName}
+            />
+
             {/* Bottom Action Bar */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { backgroundColor: theme.card, borderTopColor: isDarkMode ? '#1E293B' : '#F1F5F9' }]}>
                 {isOwner ? (
-                    <TouchableOpacity
-                        style={[styles.actionBtn, styles.resolveBtn]}
-                        onPress={handleResolve}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <>
-                                <Ionicons name="checkmark-circle" size={24} color="#fff" />
-                                <Text style={styles.actionBtnText}>Mark as Resolved</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
+                    <View style={styles.ownerActionRow}>
+                        <TouchableOpacity
+                            style={[styles.actionBtn, styles.resolveBtn, { flex: 1 }]}
+                            onPress={handleResolve}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="checkmark-circle" size={22} color="#fff" />
+                                    <Text style={styles.actionBtnText}>Found it!</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.actionBtn, styles.deleteBtn]}
+                            onPress={handleDelete}
+                            disabled={deleteLoading}
+                        >
+                            {deleteLoading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons name="trash" size={22} color="#fff" />
+                                    <Text style={styles.actionBtnText}>Delete</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 ) : (
                     <View style={styles.actionRow}>
                         {/* Chat Button - HIDDEN, only 'Request' is allowed first */}
@@ -356,12 +484,62 @@ export default function ItemDetailScreen({ route, navigation }) {
                         >
                             <Ionicons name={itemType === 'lost' ? "hand-right" : "gift"} size={24} color="#fff" />
                             <Text style={styles.actionBtnText}>
-                                {itemType === 'lost' ? "I Found This" : "Claim Item"}
+                                {itemType === 'lost' ? "I Found This" : "Ask for item"}
                             </Text>
                         </TouchableOpacity>
+
+                        {/* Withdraw Claim Button (If already claimed) */}
+                        {myClaim && (
+                            <TouchableOpacity
+                                style={[styles.actionBtn, { backgroundColor: '#EF4444', flex: 1 }]}
+                                onPress={async () => {
+                                    const confirmMsg = "Withdraw your request for this item?";
+                                    const doWithdraw = async () => {
+                                        try {
+                                            await apiClient.patch(`/claims/${myClaim._id}/status`, { status: 'cancelled' });
+                                            setMyClaim(null);
+                                            Alert.alert("Success", "Request withdrawn.");
+                                        } catch (e) { Alert.alert("Error", "Failed to withdraw request."); }
+                                    };
+
+                                    if (Platform.OS === 'web' ? window.confirm(confirmMsg) : true) {
+                                        if (Platform.OS !== 'web') {
+                                            Alert.alert("Withdraw Request", confirmMsg, [
+                                                { text: "No", style: "cancel" },
+                                                { text: "Yes", style: "destructive", onPress: doWithdraw }
+                                            ]);
+                                        } else {
+                                            doWithdraw();
+                                        }
+                                    }
+                                }}
+                            >
+                                <Ionicons name="close-circle" size={24} color="#fff" />
+                                <Text style={styles.actionBtnText}>Withdraw Request</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 )}
             </View>
+
+            {/* Photo Preview Modal */}
+            <Modal visible={!!selectedImage} transparent={true} animationType="fade">
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' }}>
+                    <TouchableOpacity
+                        style={{ position: 'absolute', top: 50, right: 20, zIndex: 10 }}
+                        onPress={() => setSelectedImage(null)}
+                    >
+                        <Ionicons name="close" size={32} color="#fff" />
+                    </TouchableOpacity>
+                    {selectedImage && (
+                        <Image
+                            source={{ uri: selectedImage }}
+                            style={{ width: '100%', height: '80%' }}
+                            resizeMode="contain"
+                        />
+                    )}
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -376,7 +554,7 @@ const styles = StyleSheet.create({
     badge: { position: 'absolute', bottom: 20, left: 20, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
     lostBadge: { backgroundColor: '#ff3b30' },
     foundBadge: { backgroundColor: '#34c759' },
-    highValueBadge: { position: 'absolute', bottom: 20, right: 20, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#007aff', flexDirection: 'row', alignItems: 'center', gap: 5 },
+    highValueBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#007aff', flexDirection: 'row', alignItems: 'center', gap: 5 },
     badgeText: { color: '#fff', fontWeight: '800', fontSize: 11, letterSpacing: 1 },
 
     trackingContainer: { marginTop: 20, padding: 20, backgroundColor: '#F8FAFC', borderRadius: 24, borderWidth: 1, borderColor: '#E2E8F0' },
@@ -413,12 +591,18 @@ const styles = StyleSheet.create({
     reportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 25, paddingVertical: 12 },
     reportText: { fontSize: 14, fontWeight: '600' },
 
-    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 25, paddingBottom: Platform.OS === 'ios' ? 40 : 25, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-    actionRow: { flexDirection: 'row', gap: 15 },
-    actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 20, borderRadius: 24, gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, paddingBottom: Platform.OS === 'ios' ? 40 : 20, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+    actionRow: { flexDirection: 'row', gap: 12 },
+    ownerActionRow: { flexDirection: 'row', gap: 12 },
+    actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, paddingHorizontal: 20, borderRadius: 20, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
     flexBtn: { flex: 1 },
-    resolveBtn: { backgroundColor: '#0F172A', width: '100%' },
+    resolveBtn: { backgroundColor: '#0F172A' },
+    deleteBtn: { backgroundColor: '#EF4444' },
     foundBtn: { backgroundColor: '#4F46E5' },
     claimBtn: { backgroundColor: '#EA580C' },
-    actionBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+    actionBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+
+    // Delete post link (inline)
+    deletePostBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20, paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
+    deletePostText: { fontSize: 14, fontWeight: '700', color: '#EF4444' },
 });

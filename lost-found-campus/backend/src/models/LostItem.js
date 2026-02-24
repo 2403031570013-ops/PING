@@ -1,32 +1,47 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
-const LostItemSchema = new mongoose.Schema({
-    title: String,
-    description: String,
-    image: String,
-    location: String,
-    category: { type: String, default: 'Others' },
-    campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus' },
-    postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    isFeatured: { type: Boolean, default: false },
-    status: { type: String, enum: ['active', 'resolved', 'expired', 'locked'], default: 'active' },
-    isHighValue: { type: Boolean, default: false },
-    adminNotes: { type: String, default: "" },
-    cctvReference: { type: String, default: "" },
-    lifecycle: [{
-        status: String,
-        updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        timestamp: { type: Date, default: Date.now },
-        note: String
-    }],
-    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    createdAt: { type: Date, default: Date.now },
-    expiresAt: { type: Date, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } // 30 days
-});
+const lostItemSchema = new mongoose.Schema({
+    title: { type: String, required: true, trim: true, maxlength: 200 },
+    description: { type: String, required: true, trim: true, maxlength: 2000 },
+    location: { type: String, required: true, trim: true },
+    category: {
+        type: String,
+        enum: ['Electronics', 'Documents', 'Accessories', 'Clothing', 'Keys', 'Bags', 'Others'],
+        default: 'Others'
+    },
+    image: { type: String, default: null },
+    status: { type: String, enum: ['active', 'resolved', 'archived', 'locked'], default: 'active' },
+    coordinates: {
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null }
+    },
+    postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus', required: true },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
+    // Enhanced fields
+    bounty: { type: Number, default: 0, min: 0 },
+    priority: { type: String, enum: ['normal', 'high'], default: 'normal' },
+    isInsured: { type: Boolean, default: false },
+    tags: [{ type: String, trim: true }],
+
+    // AI matching embeddings (simulated)
+    embedding: { type: [Number], default: [] },
+
+    // Moderation
+    flagged: { type: Boolean, default: false },
+    flagReason: { type: String, default: null },
+
+    // View tracking
+    viewCount: { type: Number, default: 0 },
+}, { timestamps: true });
 
 // Indexes for common queries
-LostItemSchema.index({ campusId: 1, status: 1, createdAt: -1 });
-LostItemSchema.index({ postedBy: 1, status: 1 });
-LostItemSchema.index({ title: 'text', description: 'text' });
+lostItemSchema.index({ campusId: 1, status: 1 });
+lostItemSchema.index({ postedBy: 1 });
+lostItemSchema.index({ category: 1 });
+lostItemSchema.index({ createdAt: -1 });
+lostItemSchema.index({ title: 'text', description: 'text' });
 
-module.exports = mongoose.model("LostItem", LostItemSchema);
+module.exports = mongoose.model('LostItem', lostItemSchema);

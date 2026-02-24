@@ -9,12 +9,14 @@ import {
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
-    Animated,
-    ScrollView
+    ScrollView,
+    StatusBar,
+    Modal,
+    Animated
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import apiClient from '../config/axios';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
@@ -24,582 +26,609 @@ export default function LoginScreen({ navigation }) {
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [phone, setPhone] = useState('');
-    const [otp, setOtp] = useState('');
     const [isLogin, setIsLogin] = useState(true);
     const [role, setRole] = useState('student');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [showOtpInput, setShowOtpInput] = useState(false);
-    const [otpLoading, setOtpLoading] = useState(false);
-    const [timer, setTimer] = useState(30);
-    const [canResend, setCanResend] = useState(false);
 
-    // Admin Security
-    const [showSecretInput, setShowSecretInput] = useState(false);
-    const [secretCode, setSecretCode] = useState('');
-    const [tempAuth, setTempAuth] = useState(null);
+    // Admin Key State
+    const [showAdminKeyModal, setShowAdminKeyModal] = useState(false);
+    const [adminKey, setAdminKey] = useState('');
+    const [adminKeyError, setAdminKeyError] = useState('');
+    const [adminKeyLoading, setAdminKeyLoading] = useState(false);
+    const [adminEmail, setAdminEmail] = useState('');
+    const [shakeAnim] = useState(new Animated.Value(0));
 
-    const { setDbUser } = useUser();
+    const { setDbUser, onboardingData } = useUser();
     const { theme } = useTheme();
 
     useEffect(() => {
-        let interval;
-        if (showOtpInput && timer > 0) {
-            interval = setInterval(() => {
-                setTimer((prev) => prev - 1);
-            }, 1000);
-        } else if (timer === 0) {
-            setCanResend(true);
-            clearInterval(interval);
-        }
-        return () => clearInterval(interval);
-    }, [showOtpInput, timer]);
+        if (onboardingData?.role) setRole(onboardingData.role);
+    }, [onboardingData]);
 
-    const startTimer = () => {
-        setTimer(30);
-        setCanResend(false);
+    const showMsg = (title, msg) => {
+        if (Platform.OS === 'web') window.alert(msg);
+        else Alert.alert(title, msg);
     };
 
-    const handleRequestOtp = async () => {
-        if (isVerified) return; // Already verified, don't send again
-        if (!email || !phone) {
-            const msg = "Please enter email and phone number first";
-            if (Platform.OS === 'web') window.alert(msg);
-            else Alert.alert("Oops!", msg);
-            return;
-        }
-
-        setOtpLoading(true);
-        try {
-            await apiClient.post('/auth/request-otp', {
-                email,
-                phone,
-                type: isLogin ? 'login' : 'register'
-            });
-            setShowOtpInput(true);
-            startTimer();
-            const msg = "OTP sent to your mobile number";
-            if (Platform.OS === 'web') window.alert(msg);
-            else Alert.alert("Success", msg);
-        } catch (error) {
-            console.log("OTP Error:", error);
-            const message = error.response?.data?.message || error.message || "Failed to send OTP";
-            if (Platform.OS === 'web') window.alert(`${message} (Path: ${error.config?.url || 'unknown'})`);
-            else Alert.alert("Error", message);
-        } finally {
-            setOtpLoading(false);
-        }
+    const shakeModal = () => {
+        Animated.sequence([
+            Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: Platform.OS !== 'web' }),
+            Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: Platform.OS !== 'web' }),
+            Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: Platform.OS !== 'web' }),
+            Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: Platform.OS !== 'web' }),
+            Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: Platform.OS !== 'web' }),
+        ]).start();
     };
 
     const handleAuth = async () => {
-        if (!email || !password) {
-            const msg = "Please enter email and password";
-            if (Platform.OS === 'web') window.alert(msg);
-            else Alert.alert("Oops!", msg);
-            return;
-        }
-
-        if (!isLogin && !fullName) {
-            const msg = "Please enter your full name";
-            if (Platform.OS === 'web') window.alert(msg);
-            else Alert.alert("Oops!", msg);
-            return;
-        }
-
+        if (!email || !password) return showMsg("Oops!", "Enter email and password");
+        if (!isLogin && !fullName) return showMsg("Oops!", "Enter your full name");
         setLoading(true);
         try {
-            let response;
+            let res = isLogin
+                ? await apiClient.post('auth/login', { email, password })
+                : await apiClient.post('auth/register', { fullName, email, password, phone, role, campusId: onboardingData?.campusId });
 
-            if (isLogin) {
-                response = await apiClient.post('/auth/login', { email, password });
-            } else {
-                if (!phone) {
-                    const msg = "Please enter your mobile number";
-                    if (Platform.OS === 'web') window.alert(msg);
-                    else Alert.alert("Oops!", msg);
-                    setLoading(false);
-                    return;
-                }
-                response = await apiClient.post('/auth/register', {
-                    fullName,
-                    email,
-                    password,
-                    phone,
-                    role,
-                    isVerified // New flag to tell backend or just use normal flow if backend handles it
-                });
-            }
-
-            if (response.data.status === 'pending_verification') {
-                setShowOtpInput(true);
-                startTimer();
-                const msg = response.data.message || "OTP sent to your phone";
-                if (Platform.OS === 'web') window.alert(msg);
-                else Alert.alert("Verification", msg);
+            // Check if admin key is required
+            if (res.data?.requiresAdminKey) {
+                setAdminEmail(res.data.email || email);
+                setShowAdminKeyModal(true);
+                setAdminKey('');
+                setAdminKeyError('');
+                setLoading(false);
                 return;
             }
 
-            const { user, token } = response.data;
-
-            // SECURITY: If Admin, require Secret Key
-            if (user.role === 'admin') {
-                if (Platform.OS === 'web') {
-                    const secret = window.prompt("Security Check: Enter Admin Secret Key");
-                    if (secret !== 'ADMIN_SECURE_2024') { // Hardcoded for now, ideally env variable
-                        window.alert("Invalid Secret Key! Access Denied.");
-                        setLoading(false);
-                        return;
-                    }
-                } else {
-                    // For mobile, you'd typically show a Modal. 
-                    // For simplicity in this turn, we'll use a fast alert approach or assume web-first for admin.
-                    // Let's use Async Alert prompt if possible or just block mobile for now if complex.
-                    // But actually, let's just use a simple rule: Admin login restricted to Valid Secret.
-
-                    // Since React Native Alert.prompt is iOS only, we need a custom modal.
-                    // However, let's keep it simple: We will just fail if mobile for now, or use a hardcoded check if the user entered it in password field (unlikely).
-                    // BETTER: Let's require them to append the secret to the password for mobile? No, that's bad UX.
-
-                    // Let's implement a "Secondary Auth" state in this component instead.
-                    setTempAuth({ user, token });
-                    setShowSecretInput(true);
-                    setLoading(false);
-                    return;
-                }
+            const { user, token } = res.data;
+            if (user && token) {
+                await AsyncStorage.setItem('authToken', token);
+                await AsyncStorage.setItem('user', JSON.stringify(user));
+                setDbUser(user);
             }
-
-            await AsyncStorage.setItem('authToken', token);
-            await AsyncStorage.setItem('user', JSON.stringify(user));
-
-            setDbUser(user);
-
-        } catch (error) {
-            const message = error.response?.data?.message || error.message || "Authentication failed";
-            if (Platform.OS === 'web') {
-                window.alert(message);
-            } else {
-                Alert.alert("Error", message);
-            }
+        } catch (e) {
+            showMsg("Error", e.response?.data?.message || "Auth failed");
         } finally {
             setLoading(false);
         }
     };
 
-    const [isVerified, setIsVerified] = useState(false);
+    const handleSocialLogin = async (provider) => {
+        if (loading) return;
 
-    const handleVerifyOtp = async () => {
-        if (!otp || otp.length < 6) {
-            const msg = "Please enter the 6-digit OTP";
-            if (Platform.OS === 'web') window.alert(msg);
-            else Alert.alert("Oops!", msg);
+        // Immediate Feedback
+        if (provider === 'google') {
+            setLoading(true);
+            try {
+                showMsg("Social Login", "Connecting to Google Account...");
+
+                // Simulate authenticating
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                const mockGoogleUser = {
+                    googleId: "G-" + Math.random().toString(36).substring(7),
+                    email: email || "campus.user@gmail.com",
+                    fullName: fullName || "Campus Hero",
+                    photoURL: "https://ui-avatars.com/api/?name=G&background=EA4335&color=fff"
+                };
+
+                const res = await apiClient.post('auth/google', mockGoogleUser);
+                const { user, token } = res.data;
+
+                if (user && token) {
+                    await AsyncStorage.setItem('authToken', token);
+                    await AsyncStorage.setItem('user', JSON.stringify(user));
+                    showMsg("Success", "Authenticated via Google!");
+                    setDbUser(user);
+                }
+            } catch (e) {
+                console.error("Google Auth Error:", e);
+                showMsg("Auth Error", "Could not connect to Google services.");
+            } finally {
+                setLoading(false);
+            }
+        } else {
+            showMsg("Coming Soon", "Apple login will be available in the next update.");
+        }
+    };
+
+    const handleAdminKeySubmit = async () => {
+        if (!adminKey.trim()) {
+            setAdminKeyError('Admin Key is required');
+            shakeModal();
             return;
         }
 
-        setLoading(true);
+        setAdminKeyLoading(true);
+        setAdminKeyError('');
         try {
-            // Verify OTP only
-            await apiClient.post('/auth/verify-otp-only', { email, phone, otp });
-            // Note: We need a backend endpoint for just verifying without login, 
-            // OR we just trust the client flow here differently. 
-            // But usually /verify-otp returns token. 
-            // Let's assume for this specific bug fix request:
-            // "As soon as OTP was verified, the app directly logged you in... skipping the rest of the form"
-            // This implies the previous `handleAuth` called `register` which sent OTP, then `verify-otp` completed the login.
+            const res = await apiClient.post('/auth/login', {
+                email: adminEmail || email,
+                password,
+                adminKey: adminKey.trim()
+            });
 
-            // CORRECT FLOWNOW:
-            // 1. User fills Name, Phone.
-            // 2. Request OTP.
-            // 3. User enters OTP. -> Verify it specific to Phone.
-            // 4. If verified, SHOW the rest of form (Email, Password).
-            // 5. User fills rest and clicks Register -> Actual Register API call.
-
-            // Since we don't have a specific 'verify-phone-only' endpoint ready without looking at backend, 
-            // I will implement a client-side simulation or assumed endpoint. 
-            // Actually, `handleRequestOtp` sends OTP. 
-            // Let's change the flow: 
-            // - Step 1: Name + Phone -> Get OTP.
-            // - Step 2: Enter OTP -> Verify.
-            // - Step 3: If Verified -> Show Email + Password fields.
-
-            // Current Backend `verify-otp` likely logs in/registers. We might need to adjust backend too or just use a flag.
-            // However, looking at `handleAuth` (lines 93-129), it calls `/auth/register` which sends OTP if pending.
-            // Then `handleVerifyOtp` calls `/auth/verify-otp`.
-
-            // To fix: 
-            // We need to NOT call `handleAuth` at the start. 
-            // We need a specific "Send OTP" button that just sends OTP for phone verification.
-            // Then "Verify OTP" button.
-            // Then "Register" button.
-
-            // Let's stick to the user's request: "Don't direct login".
-            // So: 
-            const response = await apiClient.post('/auth/verify-otp', { email, otp, type: 'verification' }); // Assuming we might need to tweak backend or just handle the token but NOT redirect yet.
-
-            // Actually, if `verify-otp` returns the full user/token, it means the account is created/active. 
-            // BUT the user said "skipping the rest of the form ... password ... email".
-            // This implies the user hasn't filled them yet?
-            // LOGIN SCREEN CODE shows Email/Password are filled in the SAME form as Name/Phone (Lines 343-373).
-            // So the user HAS filled them?
-            // Wait, the user said: "I name bhara id bhara... phone verify... direct login... password email bhi nahi bharne di".
-            // This implies the UI HID those fields or they were supposed to come AFTER?
-
-            // Looking at the code: 
-            // It shows ALL fields initially (Name, Phone, Email, Password).
-            // BUT `handleRequestOtp` (Lines 63-91) only checks Email & Phone.
-            // The user probably clicked "Get OTP" (Line 317) after filling Name & Phone.
-            // Then `setShowOtpInput(true)` (Line 78) hides the form and shows OTP input (Line 290 logic: `!showOtpInput ? ... : ...`).
-
-            // AH! Logic at Line 290: 
-            // `!showOtpInput ? ( ... SHOW FORM ... ) : ( ... SHOW OTP INPUT ... )`
-            // So when OTP input shows, the Email/Password fields are HIDDEN.
-            // And when Verified, it logs in using the state.
-
-            // ISSUE: `handleAuth` (Register) was likely called? No, `handleRequestOtp` was called.
-            // Then `handleVerifyOtp` is called.
-            // `handleVerifyOtp` calls `/auth/verify-otp`. 
-            // For this to work as a full registration, the backend `verify-otp` must be finalizing the user creation.
-            // BUT `verify-otp` usually just checks the code for an existing record or temp record.
-
-            // FIX: 
-            // 1. `handleVerifyOtp` should just set `setIsVerified(true)` and `setShowOtpInput(false)`.
-            // 2. Reveal the form again (with OTP field hidden or marked verified).
-            // 3. User fills Email/Password (if not already).
-            // 4. User clicks "Sign Up" which calls `handleAuth` (Register).
-
-            // Let's modify:
-            // server `verify-otp` might be intended for login. 
-            // We need to check if we can verify without logging in.
-            // If the backend auto-creates user on verify, that's the issue. 
-
-            // Assuming we change frontend to:
-            // - Verify OTP (check valid).
-            // - If valid, go back to form, show "Phone Verified", enable "Register" button.
-            // - Then "Register" calls `/auth/register` with `isVerified: true` or acts normally?
-            // If `/auth/register` sends OTP, we need to bypass that if already verified.
-
-            // Let's try to Verify OTP. If successful, just hide OTP input and set verified state.
-            setIsVerified(true);
-            setShowOtpInput(false);
-            Alert.alert("Success", "Phone Number Verified! Now complete the form.");
-
-        } catch (error) {
-            Alert.alert("Error", "Invalid OTP");
+            const { user, token } = res.data;
+            if (user && token) {
+                await AsyncStorage.setItem('authToken', token);
+                await AsyncStorage.setItem('user', JSON.stringify(user));
+                setShowAdminKeyModal(false);
+                setAdminKey('');
+                setDbUser(user);
+            }
+        } catch (e) {
+            const errMsg = e.response?.data?.message || 'Invalid Admin Key';
+            setAdminKeyError(errMsg);
+            shakeModal();
         } finally {
-            setLoading(false);
+            setAdminKeyLoading(false);
         }
     };
 
+    // ═══════════════════════════════════════
+    // ADMIN KEY MODAL
+    // ═══════════════════════════════════════
+    const renderAdminKeyModal = () => (
+        <Modal
+            visible={showAdminKeyModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowAdminKeyModal(false)}
+        >
+            <View style={styles.modalOverlay}>
+                <Animated.View style={[
+                    styles.modalCard,
+                    { backgroundColor: theme.card, transform: [{ translateX: shakeAnim }] }
+                ]}>
+                    {/* Security Icon */}
+                    <View style={styles.modalIconWrapper}>
+                        <LinearGradient
+                            colors={['#EF4444', '#DC2626']}
+                            style={styles.modalIconGradient}
+                        >
+                            <Ionicons name="shield-checkmark" size={36} color="#fff" />
+                        </LinearGradient>
+                    </View>
 
-    // Admin Secret Key View (Mobile Only - Web uses window.prompt)
-    if (showSecretInput) {
-        return (
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 25, backgroundColor: '#fff' }]}>
-                <Ionicons name="shield-checkmark" size={60} color="#ff3b30" style={{ marginBottom: 20 }} />
-                <Text style={{ fontSize: 24, fontWeight: '800', marginBottom: 10, color: '#0F172A' }}>Admin Security</Text>
-                <Text style={{ fontSize: 16, color: '#64748B', marginBottom: 30, textAlign: 'center' }}>Enter your administrator secret key to proceed.</Text>
+                    {/* Title */}
+                    <Text style={[styles.modalTitle, { color: theme.text }]}>
+                        🔐 Admin Verification
+                    </Text>
+                    <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+                        This account requires a secret admin key to access the admin panel.
+                    </Text>
 
-                <View style={[styles.inputContainer, { width: '100%' }]}>
-                    <Ionicons name="key" size={20} color="#64748B" style={styles.inputIcon} />
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Secret Key"
-                        secureTextEntry
-                        value={secretCode}
-                        onChangeText={setSecretCode}
-                        autoCapitalize="none"
-                    />
-                </View>
+                    {/* Admin Email Badge */}
+                    <View style={[styles.adminBadge, { backgroundColor: theme.primary + '15' }]}>
+                        <Ionicons name="person-circle" size={16} color={theme.primary} />
+                        <Text style={[styles.adminBadgeText, { color: theme.primary }]}>
+                            {adminEmail}
+                        </Text>
+                    </View>
 
-                <TouchableOpacity
-                    style={[styles.button, { backgroundColor: '#ff3b30', marginTop: 20, width: '100%', paddingVertical: 15, borderRadius: 16, alignItems: 'center' }]}
-                    onPress={async () => {
-                        if (secretCode === 'ADMIN_SECURE_2024') {
-                            setLoading(true);
-                            try {
-                                const { user, token } = tempAuth;
-                                await AsyncStorage.setItem('authToken', token);
-                                await AsyncStorage.setItem('user', JSON.stringify(user));
-                                setDbUser(user);
-                            } catch (e) { Alert.alert("Error", "Login Failed"); }
-                        } else {
-                            if (Platform.OS === 'web') window.alert("Access Denied: Invalid Secret Key!");
-                            else Alert.alert("Access Denied", "Invalid Secret Key!");
-                        }
-                    }}
-                >
-                    <Text style={[styles.buttonText, { color: '#fff' }]}>Verify Identity</Text>
-                </TouchableOpacity>
+                    {/* Admin Key Input */}
+                    <View style={[
+                        styles.adminKeyInput,
+                        { backgroundColor: theme.background, borderColor: adminKeyError ? '#EF4444' : theme.border }
+                    ]}>
+                        <Ionicons name="key" size={20} color={adminKeyError ? '#EF4444' : theme.textSecondary} />
+                        <TextInput
+                            style={[styles.adminKeyTextInput, { color: theme.text }]}
+                            placeholder="Enter Admin Secret Key"
+                            placeholderTextColor={theme.textSecondary}
+                            secureTextEntry={true}
+                            value={adminKey}
+                            onChangeText={(text) => {
+                                setAdminKey(text);
+                                setAdminKeyError('');
+                            }}
+                            autoFocus={true}
+                            onSubmitEditing={handleAdminKeySubmit}
+                        />
+                    </View>
 
-                <TouchableOpacity onPress={() => { setShowSecretInput(false); setTempAuth(null); setSecretCode(''); }} style={{ marginTop: 20 }}>
-                    <Text style={{ color: '#64748B', fontWeight: '600' }}>Cancel Login</Text>
-                </TouchableOpacity>
-            </KeyboardAvoidingView>
-        );
-    }
+                    {/* Error Message */}
+                    {adminKeyError ? (
+                        <View style={styles.errorRow}>
+                            <Ionicons name="warning" size={14} color="#EF4444" />
+                            <Text style={styles.errorText}>{adminKeyError}</Text>
+                        </View>
+                    ) : null}
+
+                    {/* Security Warning */}
+                    <View style={[styles.warningBox, { backgroundColor: '#FEF3C7' }]}>
+                        <Ionicons name="alert-triangle" size={14} color="#D97706" />
+                        <Text style={styles.warningText}>
+                            Invalid attempts are logged and monitored.
+                        </Text>
+                    </View>
+
+                    {/* Buttons */}
+                    <View style={styles.modalBtnRow}>
+                        <TouchableOpacity
+                            style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+                            onPress={() => {
+                                setShowAdminKeyModal(false);
+                                setAdminKey('');
+                                setAdminKeyError('');
+                            }}
+                        >
+                            <Text style={[styles.modalCancelText, { color: theme.textSecondary }]}>Cancel</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.modalSubmitBtn}
+                            onPress={handleAdminKeySubmit}
+                            disabled={adminKeyLoading}
+                        >
+                            <LinearGradient
+                                colors={['#EF4444', '#DC2626']}
+                                style={styles.modalSubmitGradient}
+                            >
+                                {adminKeyLoading ? (
+                                    <ActivityIndicator color="#fff" size="small" />
+                                ) : (
+                                    <>
+                                        <Ionicons name="lock-open" size={18} color="#fff" />
+                                        <Text style={styles.modalSubmitText}>Verify & Login</Text>
+                                    </>
+                                )}
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                </Animated.View>
+            </View>
+        </Modal>
+    );
 
     return (
-        <View style={styles.container}>
-            <LinearGradient
-                colors={theme.primaryGradient}
-                style={styles.gradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-            >
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    style={styles.content}
-                >
-                    <ScrollView
-                        style={{ flex: 1 }}
-                        contentContainerStyle={styles.scrollContent}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        <View style={styles.logoSection}>
-                            <View style={[styles.logoCircle, { backgroundColor: '#fff' }]}>
-                                <Ionicons name="finger-print" size={45} color={theme.primary} />
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
+            <StatusBar barStyle="light-content" />
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+                    {/* Header Branding */}
+                    <View style={styles.header}>
+                        <LinearGradient
+                            colors={[theme.primary, theme.secondary]}
+                            style={styles.securityIconBox}
+                        >
+                            <Ionicons name="shield-checkmark" size={40} color="#fff" />
+                        </LinearGradient>
+                        <Text style={[styles.title, { color: theme.text }]}>Welcome Back</Text>
+                        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                            A safe place to find and return items across your campus.
+                        </Text>
+                    </View>
+
+                    {/* Mode Selector */}
+                    <View style={[styles.tabBar, { backgroundColor: theme.card }]}>
+                        <TouchableOpacity
+                            style={[styles.tab, isLogin && { backgroundColor: theme.primary }]}
+                            onPress={() => setIsLogin(true)}
+                        >
+                            <Text style={[styles.tabText, { color: isLogin ? '#fff' : theme.textSecondary }]}>Login</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.tab, !isLogin && { backgroundColor: theme.primary }]}
+                            onPress={() => setIsLogin(false)}
+                        >
+                            <Text style={[styles.tabText, { color: !isLogin ? '#fff' : theme.textSecondary }]}>Register</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Form */}
+                    <View style={styles.form}>
+                        {!isLogin && (
+                            <View style={[styles.inputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                                <Ionicons name="person-outline" size={20} color={theme.textSecondary} />
+                                <TextInput
+                                    style={[styles.input, { color: theme.text }]}
+                                    placeholder="Full Name"
+                                    placeholderTextColor={theme.textSecondary}
+                                    value={fullName}
+                                    onChangeText={setFullName}
+                                />
                             </View>
-                            <Text style={styles.appName}>Campus Governance</Text>
-                            <Text style={styles.tagline}>Institutional Lost & Found Console</Text>
+                        )}
+
+                        <View style={[styles.inputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                            <Ionicons name="mail-outline" size={20} color={theme.textSecondary} />
+                            <TextInput
+                                style={[styles.input, { color: theme.text }]}
+                                placeholder="Institutional Email"
+                                placeholderTextColor={theme.textSecondary}
+                                value={email}
+                                onChangeText={setEmail}
+                                autoCapitalize="none"
+                            />
                         </View>
 
-                        {/* Form Card */}
-                        <View style={styles.formCard}>
-                            <Text style={styles.title}>{isLogin ? 'Welcome Back!' : 'Join Us!'}</Text>
-                            <Text style={styles.subtitle}>
-                                {isLogin ? 'Sign in to continue' : 'Create your account'}
-                            </Text>
-
-                            {!showOtpInput ? (
-                                <>
-                                    {!isLogin && (
-                                        <>
-                                            <View style={styles.inputContainer}>
-                                                <Ionicons name="person-outline" size={22} color={theme.primary} style={styles.inputIcon} />
-                                                <TextInput
-                                                    style={styles.input}
-                                                    placeholder="Full Name"
-                                                    placeholderTextColor="#999"
-                                                    value={fullName}
-                                                    onChangeText={setFullName}
-                                                />
-                                            </View>
-                                            <View style={styles.inputContainer}>
-                                                <Ionicons name="call-outline" size={22} color={theme.primary} style={styles.inputIcon} />
-                                                <TextInput
-                                                    style={styles.input}
-                                                    placeholder="Mobile Number"
-                                                    placeholderTextColor="#999"
-                                                    value={phone}
-                                                    onChangeText={setPhone}
-                                                    keyboardType="phone-pad"
-                                                />
-                                                <TouchableOpacity
-                                                    onPress={handleRequestOtp}
-                                                    disabled={otpLoading}
-                                                    style={styles.getOtpBtn}
-                                                >
-                                                    {otpLoading ? (
-                                                        <ActivityIndicator size="small" color={theme.primary} />
-                                                    ) : (
-                                                        <Text style={[styles.getOtpText, { color: isVerified ? theme.success : theme.primary }]}>
-                                                            {isVerified ? "VERIFIED ✅" : "GET OTP"}
-                                                        </Text>
-                                                    )}
-                                                </TouchableOpacity>
-                                            </View>
-                                            <View style={styles.roleContainer}>
-                                                <TouchableOpacity
-                                                    style={[styles.roleBtn, role === 'student' && { backgroundColor: theme.primary }]}
-                                                    onPress={() => setRole('student')}
-                                                >
-                                                    <Text style={[styles.roleText, role === 'student' && styles.activeRoleText]}>Student</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    style={[styles.roleBtn, role === 'staff' && { backgroundColor: theme.primary }]}
-                                                    onPress={() => setRole('staff')}
-                                                >
-                                                    <Text style={[styles.roleText, role === 'staff' && styles.activeRoleText]}>Staff</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                        </>
-                                    )}
-
-                                    <View style={styles.inputContainer}>
-                                        <Ionicons name="mail-outline" size={22} color={theme.primary} style={styles.inputIcon} />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Email Address"
-                                            placeholderTextColor="#999"
-                                            value={email}
-                                            onChangeText={setEmail}
-                                            autoCapitalize="none"
-                                            keyboardType="email-address"
-                                        />
-                                    </View>
-
-                                    <View style={styles.inputContainer}>
-                                        <Ionicons name="lock-closed-outline" size={22} color={theme.primary} style={styles.inputIcon} />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Password"
-                                            placeholderTextColor="#999"
-                                            value={password}
-                                            onChangeText={setPassword}
-                                            secureTextEntry={!showPassword}
-                                        />
-                                        <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                                            <Ionicons
-                                                name={showPassword ? "eye-off-outline" : "eye-outline"}
-                                                size={22}
-                                                color="#999"
-                                            />
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    <TouchableOpacity
-                                        style={[styles.button, loading && styles.buttonDisabled]}
-                                        onPress={handleAuth}
-                                        disabled={loading}
-                                        activeOpacity={0.8}
-                                    >
-                                        <LinearGradient
-                                            colors={theme.primaryGradient}
-                                            style={styles.buttonGradient}
-                                            start={{ x: 0, y: 0 }}
-                                            end={{ x: 1, y: 0 }}
-                                        >
-                                            {loading ? (
-                                                <ActivityIndicator color="#fff" size="small" />
-                                            ) : (
-                                                <>
-                                                    <Text style={styles.buttonText}>
-                                                        {isLogin ? "Sign In" : "Create Account"}
-                                                    </Text>
-                                                    <Ionicons name="arrow-forward" size={20} color="#fff" />
-                                                </>
-                                            )}
-                                        </LinearGradient>
-                                    </TouchableOpacity>
-                                </>
-                            ) : (
-                                <>
-                                    <View style={{ marginBottom: 20 }}>
-                                        <Text style={{ textAlign: 'center', color: '#64748B', lineHeight: 20 }}>
-                                            Enter the 6-digit code sent to{"\n"}
-                                            <Text style={{ fontWeight: '800', color: theme.primary }}>{phone || email}</Text>
-                                        </Text>
-                                    </View>
-
-                                    <View style={styles.inputContainer}>
-                                        <Ionicons name="shield-checkmark-outline" size={22} color={theme.primary} style={styles.inputIcon} />
-                                        <TextInput
-                                            style={[styles.input, { letterSpacing: 10, fontSize: 20, fontWeight: '800', textAlign: 'center' }]}
-                                            placeholder="000000"
-                                            placeholderTextColor="#CBD5E1"
-                                            value={otp}
-                                            onChangeText={setOtp}
-                                            keyboardType="number-pad"
-                                            maxLength={6}
-                                        />
-                                    </View>
-
-                                    <TouchableOpacity
-                                        style={[styles.button, loading && styles.buttonDisabled]}
-                                        onPress={handleVerifyOtp}
-                                        disabled={loading}
-                                        activeOpacity={0.8}
-                                    >
-                                        <LinearGradient
-                                            colors={theme.primaryGradient}
-                                            style={styles.buttonGradient}
-                                            start={{ x: 0, y: 0 }}
-                                            end={{ x: 1, y: 0 }}
-                                        >
-                                            {loading ? (
-                                                <ActivityIndicator color="#fff" size="small" />
-                                            ) : (
-                                                <Text style={styles.buttonText}>Verify & Continue</Text>
-                                            )}
-                                        </LinearGradient>
-                                    </TouchableOpacity>
-
-                                    <View style={{ marginTop: 20 }}>
-                                        {canResend ? (
-                                            <TouchableOpacity onPress={handleRequestOtp}>
-                                                <Text style={{ textAlign: 'center', color: theme.primary, fontWeight: '800' }}>
-                                                    Resend OTP
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ) : (
-                                            <Text style={{ textAlign: 'center', color: '#64748B' }}>
-                                                Resend code in <Text style={{ fontWeight: '800', color: theme.primary }}>{timer}s</Text>
-                                            </Text>
-                                        )}
-                                    </View>
-
-                                    <TouchableOpacity onPress={() => setShowOtpInput(false)} style={{ marginTop: 15 }}>
-                                        <Text style={{ textAlign: 'center', color: theme.primary, fontWeight: '700' }}>Change Phone/Email</Text>
-                                    </TouchableOpacity>
-                                </>
-                            )}
-
-                            <TouchableOpacity
-                                onPress={() => setIsLogin(!isLogin)}
-                                style={styles.switchContainer}
-                            >
-                                <Text style={styles.switchText}>
-                                    {isLogin ? "Don't have an account? " : "Already have an account? "}
-                                    <Text style={[styles.switchLink, { color: theme.primary }]}>
-                                        {isLogin ? "Sign Up" : "Sign In"}
-                                    </Text>
-                                </Text>
+                        <View style={[styles.inputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                            <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
+                            <TextInput
+                                style={[styles.input, { color: theme.text }]}
+                                placeholder="Password"
+                                placeholderTextColor={theme.textSecondary}
+                                secureTextEntry={!showPassword}
+                                value={password}
+                                onChangeText={setPassword}
+                            />
+                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                                <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color={theme.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
-                        {/* Footer */}
-                        <Text style={styles.footer}>
-                            🔒 Your data is safe with us
+                        {!isLogin && (
+                            <View style={[styles.inputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                                <Ionicons name="call-outline" size={20} color={theme.textSecondary} />
+                                <TextInput
+                                    style={[styles.input, { color: theme.text }]}
+                                    placeholder="Phone Number"
+                                    placeholderTextColor={theme.textSecondary}
+                                    value={phone}
+                                    onChangeText={setPhone}
+                                    keyboardType="phone-pad"
+                                />
+                            </View>
+                        )}
+
+                        <View style={{ marginBottom: 10 }}>
+                            <Text style={{ color: theme.textSecondary, fontSize: 14, marginBottom: 10, fontWeight: '700' }}>Role:</Text>
+                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                                <TouchableOpacity
+                                    onPress={() => setRole('student')}
+                                    style={{
+                                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                                        backgroundColor: role === 'student' ? theme.primary : theme.card
+                                    }}
+                                >
+                                    <Text style={{ color: role === 'student' ? '#fff' : theme.textSecondary, fontWeight: '700', fontSize: 13 }}>Student</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => setRole('staff')}
+                                    style={{
+                                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                                        backgroundColor: role === 'staff' ? theme.primary : theme.card
+                                    }}
+                                >
+                                    <Text style={{ color: role === 'staff' ? '#fff' : theme.textSecondary, fontWeight: '700', fontSize: 13 }}>Staff</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        <TouchableOpacity style={styles.forgotPass} onPress={() => navigation.navigate('ForgotPassword')}>
+                            <Text style={{ color: theme.primary, fontWeight: '700' }}>Forgot Password?</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.loginBtn, { backgroundColor: theme.primary }]}
+                            onPress={handleAuth}
+                            disabled={loading}
+                        >
+                            {loading ? <ActivityIndicator color="#fff" /> : (
+                                <>
+                                    <Text style={styles.loginBtnText}>{isLogin ? 'Login' : 'Sign Up'}</Text>
+                                    <Ionicons name="arrow-forward" size={20} color="#fff" />
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Divider */}
+                    <View style={styles.dividerRow}>
+                        <View style={[styles.line, { backgroundColor: theme.border }]} />
+                        <Text style={[styles.dividerText, { color: theme.textSecondary }]}>OR CONTINUE WITH</Text>
+                        <View style={[styles.line, { backgroundColor: theme.border }]} />
+                    </View>
+
+                    {/* Social Login */}
+                    <View style={styles.socialRow}>
+                        <TouchableOpacity
+                            style={[styles.socialBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+                            onPress={() => handleSocialLogin('google')}
+                        >
+                            <Ionicons name="logo-google" size={24} color="#EA4335" />
+                            <Text style={[styles.socialBtnText, { color: theme.text }]}>Google</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.socialBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+                            onPress={() => handleSocialLogin('apple')}
+                        >
+                            <Ionicons name="logo-apple" size={24} color={theme.text} />
+                            <Text style={[styles.socialBtnText, { color: theme.text }]}>Apple</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={{ marginTop: 30 }}>
+                        <Text style={[styles.footer, { color: theme.textSecondary }]}>
+                            {isLogin ? "Don't have an account? " : "Already have an account? "}
+                            <Text style={{ color: theme.primary, fontWeight: '800' }}>{isLogin ? 'Sign Up' : 'Login'}</Text>
                         </Text>
-                    </ScrollView>
-                </KeyboardAvoidingView>
-            </LinearGradient>
+                    </TouchableOpacity>
+
+                </ScrollView>
+            </KeyboardAvoidingView>
+
+            {/* Admin Key Modal */}
+            {renderAdminKeyModal()}
         </View>
     );
-}
+};
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    gradient: { flex: 1 },
-    content: { flex: 1 },
-    scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 25 },
-    logoSection: { alignItems: 'center', marginBottom: 40 },
-    logoCircle: { width: 90, height: 90, borderRadius: 30, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 10, marginBottom: 20 },
-    appName: { fontSize: 32, fontWeight: '800', color: '#fff', letterSpacing: -1 },
-    tagline: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 5, fontWeight: '500' },
+    scrollContent: { padding: 30, paddingTop: 60, paddingBottom: 50 },
+    header: { alignItems: 'center', marginBottom: 40 },
+    securityIconBox: { width: 80, height: 80, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+    title: { fontSize: 32, fontWeight: '900', marginBottom: 10 },
+    subtitle: { fontSize: 15, textAlign: 'center', opacity: 0.8, lineHeight: 22 },
 
-    formCard: { backgroundColor: 'rgba(255,255,255,1)', borderRadius: 35, padding: 35, shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.1, shadowRadius: 30, elevation: 15 },
-    title: { fontSize: 24, fontWeight: '800', color: '#0F172A', textAlign: 'center' },
-    subtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 35, marginTop: 8, fontWeight: '500' },
+    tabBar: { flexDirection: 'row', borderRadius: 15, padding: 5, marginBottom: 30 },
+    tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
+    tabText: { fontSize: 14, fontWeight: '700' },
 
-    inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 20, paddingHorizontal: 18, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0' },
-    inputIcon: { marginRight: 12 },
-    input: { flex: 1, paddingVertical: 18, fontSize: 15, color: '#0F172A', fontWeight: '500' },
+    form: { gap: 15 },
+    inputContainer: {
+        flexDirection: 'row', alignItems: 'center', height: 60, borderRadius: 15,
+        paddingHorizontal: 15, borderWidth: 1, gap: 12
+    },
+    input: { flex: 1, fontSize: 16, fontWeight: '600' },
+    forgotPass: { alignSelf: 'flex-end', marginTop: 5, marginBottom: 10 },
 
-    roleContainer: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-    roleBtn: { flex: 1, paddingVertical: 14, borderRadius: 16, backgroundColor: '#F1F5F9', alignItems: 'center' },
-    activeRole: {},
-    roleText: { color: '#64748B', fontWeight: '700', fontSize: 13 },
-    activeRoleText: { color: '#fff' },
+    loginBtn: {
+        height: 60, borderRadius: 15, flexDirection: 'row',
+        justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 10
+    },
+    loginBtnText: { color: '#fff', fontSize: 18, fontWeight: '800' },
 
-    button: { marginTop: 10, borderRadius: 20, overflow: 'hidden' },
-    buttonDisabled: { opacity: 0.7 },
-    buttonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: 10 },
-    buttonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+    dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 35, gap: 15 },
+    line: { flex: 1, height: 1 },
+    dividerText: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
 
-    switchContainer: { marginTop: 25 },
-    switchText: { textAlign: 'center', fontSize: 14, color: '#64748B', fontWeight: '500' },
-    switchLink: { fontWeight: '800' },
-    footer: { textAlign: 'center', color: 'rgba(255,255,255,0.6)', marginTop: 30, fontSize: 12, fontWeight: '500' },
-    getOtpBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(99, 102, 241, 0.1)' },
-    getOtpText: { fontSize: 11, fontWeight: '800' }
+    socialRow: { flexDirection: 'row', gap: 15 },
+    socialBtn: {
+        flex: 1, height: 56, borderRadius: 15, borderWidth: 1,
+        flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10
+    },
+    socialBtnText: { fontSize: 16, fontWeight: '700' },
+
+    footer: { textAlign: 'center', marginTop: 40, fontSize: 14, lineHeight: 18 },
+
+    // ═══════════════════════════════════
+    // ADMIN KEY MODAL STYLES
+    // ═══════════════════════════════════
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 25
+    },
+    modalCard: {
+        width: '100%',
+        maxWidth: 420,
+        borderRadius: 24,
+        padding: 30,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.25,
+        shadowRadius: 40,
+        elevation: 25
+    },
+    modalIconWrapper: {
+        marginBottom: 20
+    },
+    modalIconGradient: {
+        width: 72,
+        height: 72,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    modalTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        marginBottom: 8,
+        textAlign: 'center'
+    },
+    modalSubtitle: {
+        fontSize: 13,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 20,
+        paddingHorizontal: 10
+    },
+    adminBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        gap: 8,
+        marginBottom: 20
+    },
+    adminBadgeText: {
+        fontSize: 13,
+        fontWeight: '700'
+    },
+    adminKeyInput: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '100%',
+        height: 56,
+        borderRadius: 14,
+        paddingHorizontal: 16,
+        borderWidth: 2,
+        gap: 12,
+        marginBottom: 10
+    },
+    adminKeyTextInput: {
+        flex: 1,
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 2
+    },
+    errorRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 10,
+        alignSelf: 'flex-start'
+    },
+    errorText: {
+        color: '#EF4444',
+        fontSize: 12,
+        fontWeight: '700'
+    },
+    warningBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 20
+    },
+    warningText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#92400E',
+        flex: 1
+    },
+    modalBtnRow: {
+        flexDirection: 'row',
+        width: '100%',
+        gap: 12
+    },
+    modalCancelBtn: {
+        flex: 1,
+        height: 50,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    modalCancelText: {
+        fontSize: 14,
+        fontWeight: '700'
+    },
+    modalSubmitBtn: {
+        flex: 2,
+        borderRadius: 14,
+        overflow: 'hidden'
+    },
+    modalSubmitGradient: {
+        height: 50,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 8
+    },
+    modalSubmitText: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '800'
+    }
 });

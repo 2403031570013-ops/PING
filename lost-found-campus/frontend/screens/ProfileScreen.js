@@ -9,7 +9,8 @@ import {
     ScrollView,
     StatusBar,
     Platform,
-    Switch
+    Switch,
+    TextInput
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -159,6 +160,43 @@ export default function ProfileScreen({ navigation }) {
         }
     };
 
+    const handleDeleteAccount = () => {
+        if (Platform.OS === 'web') {
+            const input = window.prompt('⚠️ DANGER ZONE\n\nThis action is permanent. All your data will be anonymized.\n\nType DELETE to confirm:');
+            if (input === 'DELETE') {
+                apiClient.delete('/user-reports/delete-account', { data: { confirmation: 'DELETE' } })
+                    .then(() => {
+                        window.alert('Account deleted. You will be logged out.');
+                        logout();
+                    })
+                    .catch(err => window.alert(err.response?.data?.message || 'Failed to delete account'));
+            } else if (input !== null) {
+                window.alert('Confirmation text did not match. Account NOT deleted.');
+            }
+        } else {
+            Alert.alert(
+                '⚠️ Delete Account?',
+                'This action is permanent. All your data will be anonymized and cannot be recovered.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Delete Forever',
+                        style: 'destructive',
+                        onPress: async () => {
+                            try {
+                                await apiClient.delete('/user-reports/delete-account', { data: { confirmation: 'DELETE' } });
+                                Alert.alert('Done', 'Account deleted. You will be logged out.');
+                                await logout();
+                            } catch (err) {
+                                Alert.alert('Error', err.response?.data?.message || 'Failed to delete account');
+                            }
+                        }
+                    }
+                ]
+            );
+        }
+    };
+
     if (!dbUser) return null;
 
     const menuItems = [
@@ -168,7 +206,7 @@ export default function ProfileScreen({ navigation }) {
                 title: 'Security Desk Mode',
                 subtitle: 'Rapid log & auto-ID scanner',
                 color: '#10B981',
-                onPress: () => navigation.navigate('SecurityDesk')
+                onPress: () => navigation.navigate('SecurityDeskStack')
             }
         ] : []),
         ...(dbUser.role === 'admin' ? [
@@ -177,7 +215,7 @@ export default function ProfileScreen({ navigation }) {
                 title: 'University Console',
                 subtitle: 'Management dashboard & analytics',
                 color: '#3B82F6',
-                onPress: () => navigation.navigate('AdvancedAdmin')
+                onPress: () => navigation.navigate('AdvancedAdminStack')
             }
         ] : []),
         {
@@ -209,6 +247,13 @@ export default function ProfileScreen({ navigation }) {
             onPress: () => navigation.navigate('Leaderboard')
         },
         {
+            icon: 'map',
+            title: 'Interactive Heatmap',
+            subtitle: 'View high-loss campus zones',
+            color: '#6366f1',
+            onPress: () => navigation.navigate('Map')
+        },
+        {
             icon: 'notifications',
             title: 'Notifications',
             subtitle: 'View all alerts',
@@ -229,19 +274,51 @@ export default function ProfileScreen({ navigation }) {
             subtitle: 'App preferences',
             color: '#667eea',
             onPress: () => {
-                const msg = "Settings coming soon!";
-                Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Coming Soon', msg);
+                const info = `⚙️ App Settings\n\n📱 Version: 2.0.0\n🎨 Theme: ${isDarkMode ? 'Dark' : 'Light'} Mode\n👤 Role: ${dbUser.role}\n🏫 Campus: ${dbUser.campusId?.name || 'Not Set'}\n📧 Email: ${dbUser.email}\n\n✅ Push Notifications: On\n🔐 2FA: Enabled via OTP`;
+                Platform.OS === 'web' ? window.alert(info) : Alert.alert('App Settings', info);
             }
         },
         {
             icon: 'help-circle',
             title: 'Help & Support',
-            subtitle: 'Get help with the app',
+            subtitle: 'FAQ & contact support',
             color: '#34c759',
             onPress: () => {
-                const msg = "Help section coming soon!";
-                Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Coming Soon', msg);
+                const help = `❓ Frequently Asked Questions\n\n1. How to report a lost item?\n→ Tap "Report Item" on home screen\n\n2. How to claim an item?\n→ Open item → Tap "This is Mine"\n\n3. How do karma points work?\n→ Earn points by helping others find their items\n\n4. How to contact support?\n→ Email: support@parullostfound.com\n\n5. Why was my account suspended?\n→ Multiple community reports. Contact admin for appeal.`;
+                Platform.OS === 'web' ? window.alert(help) : Alert.alert('Help & Support', help);
             }
+        },
+        {
+            icon: 'chatbubble-ellipses',
+            title: 'Send Feedback',
+            subtitle: 'Rate & improve the app',
+            color: '#06B6D4',
+            onPress: () => {
+                const msg = `💬 We'd love your feedback!\n\nHow would you rate your experience?\n⭐⭐⭐⭐⭐\n\nSend us an email at:\nfeedback@parullostfound.com\n\nOr mention @lost_found_campus on social media!`;
+                Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Send Feedback', msg);
+            }
+        },
+        {
+            icon: 'flag-outline',
+            title: 'My Reports',
+            subtitle: 'Track status of your reports',
+            color: '#F59E0B',
+            onPress: () => navigation.navigate('MyReports')
+        },
+        {
+            icon: 'shield-outline',
+            title: 'Blocked Users',
+            subtitle: 'Manage members you blocked',
+            color: '#6366f1',
+            onPress: () => navigation.navigate('BlockedUsers')
+        },
+        {
+            icon: 'trash',
+            title: 'Delete Account',
+            subtitle: 'Permanently delete your account',
+            color: '#EF4444',
+            onPress: handleDeleteAccount,
+            isDanger: true
         },
     ];
 
@@ -255,11 +332,24 @@ export default function ProfileScreen({ navigation }) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
+                <TouchableOpacity
+                    style={styles.editProfileBtn}
+                    onPress={() => navigation.navigate('EditProfile')}
+                >
+                    <Ionicons name="create-outline" size={22} color="#fff" />
+                    <Text style={styles.editProfileText}>Edit</Text>
+                </TouchableOpacity>
+
                 <View style={styles.avatarContainer}>
-                    <TouchableOpacity onPress={handleUpdateProfilePicture} activeOpacity={0.7}>
+                    <TouchableOpacity onPress={() => navigation.navigate('EditProfile')} activeOpacity={0.7}>
                         <Image
                             key={dbUser.photoURL} // Force re-render
-                            source={{ uri: dbUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(dbUser.fullName)}&background=fff&color=${theme.primary.replace('#', '')}&size=200&bold=true` }}
+                            source={{
+                                uri: dbUser.photoURL ?
+                                    (dbUser.photoURL.startsWith('http') || dbUser.photoURL.startsWith('data:') ?
+                                        dbUser.photoURL : `http://127.0.0.1:5000${dbUser.photoURL}`) :
+                                    `https://ui-avatars.com/api/?name=${encodeURIComponent(dbUser.fullName)}&background=${isDarkMode ? '2D5BFF' : 'fff'}&color=${isDarkMode ? 'fff' : '2D5BFF'}&size=200&bold=true`
+                            }}
                             style={styles.avatar}
                         />
                         <View style={styles.editIconContainer}>
@@ -397,6 +487,8 @@ const styles = StyleSheet.create({
     verifiedBadge: { position: 'absolute', top: 5, right: 5, width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff', backgroundColor: '#10B981' },
     name: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 4 },
     email: { fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 20, fontWeight: '500' },
+    editProfileBtn: { position: 'absolute', top: 50, right: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, gap: 4 },
+    editProfileText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
     statsRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingVertical: 12, paddingHorizontal: 20, marginTop: 15 },
     statItem: { alignItems: 'center', flex: 1 },

@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const CallLog = require('../models/CallLog');
-const verifyToken = require('../middleware/authMiddleware');
+const { authMiddleware } = require('../middleware/authMiddleware');
 
-// 1. Log a New Call
-router.post('/', verifyToken, async (req, res) => {
+// Log a New Call
+router.post('/', authMiddleware, async (req, res) => {
     try {
         const { receiverId, status, duration = 0, type = 'voice', startTime, endTime } = req.body;
 
         const newCall = new CallLog({
-            caller: req.user.userId, // From JWT payload
+            caller: req.user._id,
             receiver: receiverId,
             status,
             type,
@@ -22,29 +22,28 @@ router.post('/', verifyToken, async (req, res) => {
         res.status(201).json(newCall);
 
     } catch (err) {
-        console.error("Error logging call:", err);
-        res.status(500).json({ message: 'Server Error' });
+        console.error("Error logging call:", err.message);
+        res.status(500).json({ message: 'Failed to log call.' });
     }
 });
 
-// 2. Get Call History (Combined Caller & Receiver)
-router.get('/', verifyToken, async (req, res) => {
+// Get Call History
+router.get('/', authMiddleware, async (req, res) => {
     try {
-        // Find calls where I am caller OR receiver
         const calls = await CallLog.find({
             $or: [
-                { caller: req.user.userId },
-                { receiver: req.user.userId }
+                { caller: req.user._id },
+                { receiver: req.user._id }
             ]
         })
             .populate('caller', 'fullName email photoURL phone')
             .populate('receiver', 'fullName email photoURL phone')
-            .sort({ createdAt: -1 }); // Newest first
+            .sort({ createdAt: -1 });
 
         res.json(calls);
     } catch (err) {
-        console.error("Error fetching calls:", err);
-        res.status(500).json({ message: 'Server Error' });
+        console.error("Error fetching calls:", err.message);
+        res.status(500).json({ message: 'Failed to fetch call history.' });
     }
 });
 

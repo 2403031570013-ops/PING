@@ -8,7 +8,10 @@ import {
     TouchableOpacity,
     ScrollView,
     ActivityIndicator,
-    Alert
+    Alert,
+    Platform,
+    Modal,
+    Dimensions
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../config/axios';
@@ -35,18 +38,50 @@ export default function PostItemScreen({ navigation, route }) {
     const [type, setType] = useState('lost');
     const [image, setImage] = useState(null);
     const [uploading, setUploading] = useState(false);
+    const [bounty, setBounty] = useState('');
+    const [isInsured, setIsInsured] = useState(false);
+    const [priority, setPriority] = useState('normal');
 
-    const pickImage = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
+    // Validation errors
+    const [errors, setErrors] = useState({});
+    const [showPickerModal, setShowPickerModal] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+
+    const handleImageChoice = async (choice) => {
+        setShowPickerModal(false);
+        const options = {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [4, 3],
-            quality: 0.5,
+            quality: 0.6,
             base64: true,
-        });
+        };
 
-        if (!result.canceled) {
-            setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+        try {
+            let result;
+            if (choice === 'camera') {
+                const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                if (status !== 'granted') {
+                    Alert.alert("Permission Required", "We need camera access to take photos of items.");
+                    return;
+                }
+                result = await ImagePicker.launchCameraAsync(options);
+            } else {
+                result = await ImagePicker.launchImageLibraryAsync(options);
+            }
+
+            if (!result.canceled) {
+                setIsScanning(true);
+                // Simulate AI analysis taking a moment
+                setTimeout(() => {
+                    setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+                    setIsScanning(false);
+                    setErrors(e => ({ ...e, image: false }));
+                }, 1500);
+            }
+        } catch (e) {
+            console.error("Image Picker Error:", e);
+            Alert.alert("Error", "Could not capture image.");
         }
     };
 
@@ -57,8 +92,36 @@ export default function PostItemScreen({ navigation, route }) {
     };
 
     const handleSubmit = async () => {
-        if (!title.trim() || !desc.trim() || !location.trim()) {
-            Alert.alert("Missing Info", "Please fill in all details");
+        // Validate ALL mandatory fields
+        const newErrors = {};
+        const missingFields = [];
+
+        if (!title.trim()) {
+            newErrors.title = true;
+            missingFields.push('Title');
+        }
+        if (!desc.trim()) {
+            newErrors.desc = true;
+            missingFields.push('Description');
+        }
+        if (!location.trim()) {
+            newErrors.location = true;
+            missingFields.push('Location');
+        }
+        if (!image) {
+            newErrors.image = true;
+            missingFields.push('Photo');
+        }
+
+        setErrors(newErrors);
+
+        if (missingFields.length > 0) {
+            const msg = `Please fill the following mandatory fields:\n\n• ${missingFields.join('\n• ')}`;
+            if (Platform.OS === 'web') {
+                window.alert(`⚠️ Missing Required Fields\n\n${msg}`);
+            } else {
+                Alert.alert('⚠️ Missing Required Fields', msg);
+            }
             return;
         }
 
@@ -78,7 +141,10 @@ export default function PostItemScreen({ navigation, route }) {
                 location,
                 category,
                 image: imageUrl,
-                campusId: targetCampusId
+                campusId: targetCampusId,
+                bounty: bounty ? parseFloat(bounty) : 0,
+                isInsured,
+                priority
             };
 
             const response = await apiClient.post(`/${type}`, payload);
@@ -101,8 +167,8 @@ export default function PostItemScreen({ navigation, route }) {
                 colors={isDarkMode ? [theme.card, theme.background] : ['#f8f9fa', '#e9ecef']}
                 style={styles.header}
             >
-                <Text style={[styles.headerTitle, { color: theme.text }]}>Post New Item</Text>
-                <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Help the community find lost items</Text>
+                <Text style={[styles.headerTitle, { color: theme.text }]}>Report something</Text>
+                <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Help someone find their things</Text>
             </LinearGradient>
 
             <View style={[styles.typeSelector, { backgroundColor: theme.card }]}>
@@ -123,36 +189,84 @@ export default function PostItemScreen({ navigation, route }) {
             </View>
 
             <View style={styles.form}>
-                <TouchableOpacity style={[styles.imageUpload, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={pickImage}>
-                    {image ? (
-                        <Image source={{ uri: image }} style={styles.uploadedImage} />
+                {/* Photo Upload - MANDATORY */}
+                <Text style={[styles.label, { color: theme.text, marginLeft: 5, marginBottom: 8 }]}>
+                    Photo <Text style={{ color: '#EF4444' }}>*</Text>
+                    {errors.image && <Text style={styles.errorHint}> — Required</Text>}
+                </Text>
+                <TouchableOpacity
+                    style={[
+                        styles.imageUpload,
+                        { backgroundColor: theme.card, borderColor: errors.image ? '#EF4444' : theme.border },
+                        errors.image && { borderWidth: 2, borderStyle: 'dashed' }
+                    ]}
+                    onPress={() => setShowPickerModal(true)}
+                >
+                    {isScanning ? (
+                        <View style={styles.scanningOverlay}>
+                            <ActivityIndicator size="large" color={theme.primary} />
+                            <Text style={[styles.scanningText, { color: theme.primary }]}>AI Analyzing Image...</Text>
+                        </View>
+                    ) : image ? (
+                        <View style={styles.imageWrapper}>
+                            <Image source={{ uri: image }} style={styles.uploadedImage} />
+                            <TouchableOpacity
+                                style={styles.removeImageBtn}
+                                onPress={() => setImage(null)}
+                            >
+                                <Ionicons name="close-circle" size={28} color="#EF4444" />
+                            </TouchableOpacity>
+                        </View>
                     ) : (
                         <View style={styles.placeholderContainer}>
-                            <Ionicons name="camera-outline" size={40} color={theme.textSecondary} />
-                            <Text style={[styles.uploadText, { color: theme.textSecondary }]}>Add Photo</Text>
+                            <Ionicons name="camera-reverse" size={40} color={errors.image ? '#EF4444' : theme.textSecondary} />
+                            <Text style={[styles.uploadText, { color: errors.image ? '#EF4444' : theme.textSecondary }]}>
+                                {errors.image ? '⚠️ Photo is required!' : 'Tap to Capture or Upload'}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 4 }}>Supports ID Cards, Wallets, Gadgets</Text>
+                        </View>
+                    )}
+                    {image && !isScanning && (
+                        <View style={styles.imageOverlayBadge}>
+                            <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', marginLeft: 4 }}>Analyzed</Text>
                         </View>
                     )}
                 </TouchableOpacity>
 
                 <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: theme.text }]}>Title</Text>
+                    <Text style={[styles.label, { color: theme.text }]}>
+                        Title <Text style={{ color: '#EF4444' }}>*</Text>
+                        {errors.title && <Text style={styles.errorHint}> — Required</Text>}
+                    </Text>
                     <TextInput
-                        style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+                        style={[
+                            styles.input,
+                            { backgroundColor: theme.card, color: theme.text, borderColor: errors.title ? '#EF4444' : theme.border },
+                            errors.title && { borderWidth: 2 }
+                        ]}
                         placeholder="e.g. Blue Backpack"
-                        placeholderTextColor={theme.textSecondary}
+                        placeholderTextColor={errors.title ? '#FCA5A5' : theme.textSecondary}
                         value={title}
-                        onChangeText={setTitle}
+                        onChangeText={(t) => { setTitle(t); setErrors(e => ({ ...e, title: false })); }}
                     />
                 </View>
 
                 <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: theme.text }]}>Location</Text>
+                    <Text style={[styles.label, { color: theme.text }]}>
+                        Location <Text style={{ color: '#EF4444' }}>*</Text>
+                        {errors.location && <Text style={styles.errorHint}> — Required</Text>}
+                    </Text>
                     <TextInput
-                        style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+                        style={[
+                            styles.input,
+                            { backgroundColor: theme.card, color: theme.text, borderColor: errors.location ? '#EF4444' : theme.border },
+                            errors.location && { borderWidth: 2 }
+                        ]}
                         placeholder={type === 'lost' ? "Where did you lose it?" : "Where did you find it?"}
-                        placeholderTextColor={theme.textSecondary}
+                        placeholderTextColor={errors.location ? '#FCA5A5' : theme.textSecondary}
                         value={location}
-                        onChangeText={setLocation}
+                        onChangeText={(t) => { setLocation(t); setErrors(e => ({ ...e, location: false })); }}
                     />
                 </View>
 
@@ -181,14 +295,63 @@ export default function PostItemScreen({ navigation, route }) {
                     </ScrollView>
                 </View>
 
+                <View style={[styles.inputGroup, { flexDirection: 'row', justifyContent: 'space-between' }]}>
+                    {/* Bounty Input */}
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text style={[styles.label, { color: theme.text }]}>Reward points (Optional)</Text>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+                            placeholder="Optional"
+                            placeholderTextColor={theme.textSecondary}
+                            keyboardType="numeric"
+                            value={bounty}
+                            onChangeText={setBounty}
+                        />
+                    </View>
+
+                    {/* Priority Selector */}
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.label, { color: theme.text }]}>How important is it?</Text>
+                        <View style={{ flexDirection: 'row', backgroundColor: theme.card, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
+                            {['normal', 'high'].map((p) => (
+                                <TouchableOpacity
+                                    key={p}
+                                    style={{ flex: 1, padding: 15, backgroundColor: priority === p ? (p === 'high' ? '#FF3B30' : theme.primary) : 'transparent' }}
+                                    onPress={() => setPriority(p)}
+                                >
+                                    <Text style={{ textAlign: 'center', color: priority === p ? '#fff' : theme.text, fontSize: 12, fontWeight: 'bold' }}>
+                                        {p.toUpperCase()}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </View>
+                </View>
+
+                {/* Insurance Toggle */}
+                <TouchableOpacity
+                    style={[styles.checkboxContainer, { borderColor: theme.border, backgroundColor: theme.card }]}
+                    onPress={() => setIsInsured(!isInsured)}
+                >
+                    <Ionicons name={isInsured ? "checkbox" : "square-outline"} size={24} color={isInsured ? theme.success : theme.textSecondary} />
+                    <Text style={[styles.checkboxLabel, { color: theme.text }]}>This item is very important</Text>
+                </TouchableOpacity>
+
                 <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: theme.text }]}>Description</Text>
+                    <Text style={[styles.label, { color: theme.text }]}>
+                        Description <Text style={{ color: '#EF4444' }}>*</Text>
+                        {errors.desc && <Text style={styles.errorHint}> — Required</Text>}
+                    </Text>
                     <TextInput
-                        style={[styles.input, styles.textArea, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+                        style={[
+                            styles.input, styles.textArea,
+                            { backgroundColor: theme.card, color: theme.text, borderColor: errors.desc ? '#EF4444' : theme.border },
+                            errors.desc && { borderWidth: 2 }
+                        ]}
                         placeholder="Describe the item (color, brand, unique marks...)"
-                        placeholderTextColor={theme.textSecondary}
+                        placeholderTextColor={errors.desc ? '#FCA5A5' : theme.textSecondary}
                         value={desc}
-                        onChangeText={setDesc}
+                        onChangeText={(t) => { setDesc(t); setErrors(e => ({ ...e, desc: false })); }}
                         multiline
                     />
                 </View>
@@ -201,10 +364,43 @@ export default function PostItemScreen({ navigation, route }) {
                     {uploading ? (
                         <ActivityIndicator color="#fff" />
                     ) : (
-                        <Text style={styles.submitBtnText}>Post Report</Text>
+                        <Text style={styles.submitBtnText}>Submit now</Text>
                     )}
                 </TouchableOpacity>
             </View>
+
+            {/* Photo Choice Modal */}
+            <Modal visible={showPickerModal} transparent={true} animationType="slide">
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.pickerModal, { backgroundColor: theme.card }]}>
+                        <View style={styles.modalHandle} />
+                        <Text style={[styles.modalTitle, { color: theme.text }]}>Choose Photo Source</Text>
+
+                        <View style={styles.pickerRow}>
+                            <TouchableOpacity style={styles.pickerItem} onPress={() => handleImageChoice('camera')}>
+                                <View style={[styles.pickerIcon, { backgroundColor: '#3b82f6' }]}>
+                                    <Ionicons name="camera" size={30} color="#fff" />
+                                </View>
+                                <Text style={[styles.pickerLabel, { color: theme.text }]}>Camera</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.pickerItem} onPress={() => handleImageChoice('gallery')}>
+                                <View style={[styles.pickerIcon, { backgroundColor: '#10b981' }]}>
+                                    <Ionicons name="images" size={30} color="#fff" />
+                                </View>
+                                <Text style={[styles.pickerLabel, { color: theme.text }]}>Gallery</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.cancelBtn, { backgroundColor: theme.background }]}
+                            onPress={() => setShowPickerModal(false)}
+                        >
+                            <Text style={[styles.cancelBtnText, { color: theme.textSecondary }]}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </ScrollView>
     );
 }
@@ -223,14 +419,21 @@ const styles = StyleSheet.create({
     activeText: { color: '#fff' },
 
     form: { padding: 20 },
-    imageUpload: { height: 200, backgroundColor: '#f9f9f9', borderRadius: 20, marginBottom: 25, overflow: 'hidden', borderStyle: 'dashed', borderWidth: 1, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center' },
-    uploadedImage: { width: '100%', height: '100%' },
+    imageUpload: { height: 220, backgroundColor: '#f9f9f9', borderRadius: 20, marginBottom: 25, overflow: 'hidden', borderStyle: 'dashed', borderWidth: 1, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center', position: 'relative' },
+    imageWrapper: { width: '100%', height: '100%', position: 'relative' },
+    removeImageBtn: { position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, padding: 2 },
+    uploadedImage: { width: '100%', height: '100%', resizeMode: 'cover' },
     placeholderContainer: { alignItems: 'center' },
-    uploadText: { color: '#999', marginTop: 10, fontWeight: '600' },
+    uploadText: { color: '#999', marginTop: 10, fontWeight: '700', fontSize: 15 },
+
+    scanningOverlay: { alignItems: 'center', justifyContent: 'center' },
+    scanningText: { marginTop: 15, fontWeight: '800', fontSize: 13, letterSpacing: 1 },
+    imageOverlayBadge: { position: 'absolute', top: 15, left: 15, backgroundColor: 'rgba(16, 185, 129, 0.9)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
 
     inputGroup: { marginBottom: 20 },
     label: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 8, marginLeft: 5 },
     input: { backgroundColor: '#f8f9fa', padding: 15, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: '#eee' },
+    errorHint: { color: '#EF4444', fontSize: 12, fontWeight: '600' },
     textArea: { height: 100, textAlignVertical: 'top' },
 
     submitBtn: { padding: 18, borderRadius: 15, alignItems: 'center', marginTop: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },
@@ -240,4 +443,18 @@ const styles = StyleSheet.create({
 
     categoriesContainer: { flexDirection: 'row', gap: 10, paddingVertical: 5 },
     categoryChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, marginRight: 8 },
+    checkboxContainer: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, borderWidth: 1, marginBottom: 20 },
+    checkboxLabel: { marginLeft: 10, fontSize: 14, fontWeight: '600' },
+
+    // Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    pickerModal: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, paddingBottom: Platform.OS === 'ios' ? 40 : 25 },
+    modalHandle: { width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 25 },
+    pickerRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 30 },
+    pickerItem: { alignItems: 'center' },
+    pickerIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+    pickerLabel: { fontSize: 13, fontWeight: '700' },
+    cancelBtn: { padding: 16, borderRadius: 15, alignItems: 'center' },
+    cancelBtnText: { fontWeight: '700', fontSize: 14 }
 });

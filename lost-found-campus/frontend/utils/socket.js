@@ -1,37 +1,55 @@
 import io from 'socket.io-client';
+import { Platform } from 'react-native';
 
-const SOCKET_URL = 'http://127.0.0.1:5000';
+const getBaseUrl = () => {
+    if (Platform.OS === 'web') {
+        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        return `http://${hostname}:5000`;
+    }
+    return 'http://127.0.0.1:5000';
+};
+
+const SOCKET_URL = getBaseUrl();
 
 let socket;
 
 export const initiateSocket = (userId) => {
-    // If socket already exists and is connected, just join.
-    if (socket && socket.connected) {
-        socket.emit('join', userId);
+    if (Platform.OS === 'web') {
+        const stub = {
+            on: () => { },
+            off: () => { },
+            emit: () => { },
+            disconnect: () => { }
+        };
+        socket = stub; // Ensure getSocket() returns the stub too
+        return stub;
+    }
+
+    if (!userId) return null;
+
+    try {
+        if (!socket) {
+            socket = io(SOCKET_URL, {
+                reconnection: true,
+                reconnectionAttempts: 2,
+                reconnectionDelay: 5000,
+                transports: ['websocket'],
+                timeout: 5000,
+            });
+        }
+
+        if (socket) {
+            socket.on('connect', () => {
+                socket.emit('join', userId);
+            });
+            socket.on('connect_error', (err) => {
+                console.warn("⚠️ Socket connection optional:", err.message);
+            });
+        }
         return socket;
+    } catch (e) {
+        return null;
     }
-
-    // Otherwise create new
-    if (!socket) socket = io(SOCKET_URL, {
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        transports: ['websocket'], // Prefer WebSockets to avoid XHR polling noise
-    });
-
-    if (socket && userId) {
-        // Emit join on initial connection AND every reconnection
-        socket.on('connect', () => {
-            console.log(`✅ Socket Connected: ${socket.id}, Joining as ${userId}`);
-            socket.emit('join', userId);
-        });
-
-        // Handle errors
-        socket.on('connect_error', (err) => {
-            console.error("❌ Socket Connection Error:", err.message);
-        });
-    }
-    return socket;
 };
 
 export const getSocket = () => socket;

@@ -1,151 +1,202 @@
-const express = require("express");
-const mongoose = require("mongoose");
+const express = require('express');
 const router = express.Router();
-const LostItem = require("../models/LostItem");
-const User = require("../models/User");
-const verifyToken = require('../middleware/authMiddleware');
-const NodeCache = require('node-cache');
+const LostItem = require('../models/LostItem');
+const { authMiddleware } = require('../middleware/authMiddleware');
+const { logToBlockchain } = require('../utils/blockchain');
+const { findAndNotifyMatches } = require('../utils/matcher');
+const { generateImageEmbedding } = require('../utils/aiService');
 
-const { findAndNotifyMatches } = require("../utils/matcher");
+// ============================================================
+// POST LOST ITEM
+// ============================================================
 
-// Initialize Cache (stdTTL: 60 seconds)
-const cache = new NodeCache({ stdTTL: 60 });
-
-// POST lost item
-router.post("/", verifyToken, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
     try {
-        const item = new LostItem({
-            ...req.body,
-            postedBy: req.user.userId // Set from token
-        });
-        await item.save();
+        const { title, description, location, category, image, campusId, bounty, priority, isInsured, coordinates } = req.body;
 
-        // Invalidate cache on new post
-        cache.flushAll();
-
-        // Trigger Smart Matcher (Async, don't block response)
-        setTimeout(() => findAndNotifyMatches(item, 'lost'), 0);
-
-        // Populate immediately for return
-        const populatedItem = await item.populate('postedBy', 'fullName photoURL email');
-        res.status(201).json(populatedItem);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// GET lost items (campus-wise)
-router.get("/", async (req, res) => {
-    try {
-        const cacheKey = `lost_items_${JSON.stringify(req.query)}`;
-        const cachedData = cache.get(cacheKey);
-
-        if (cachedData) {
-            return res.json(cachedData);
+        if (!title || !description || !location || !image) {
+            const missing = [];
+            if (!title) missing.push('Title');
+            if (!description) missing.push('Description');
+            if (!location) missing.push('Location');
+            if (!image) missing.push('Photo');
+            return res.status(400).json({ message: `Missing mandatory fields: ${missing.join(', ')}` });
         }
 
-        const { campusId, status, postedBy } = req.query;
-        let query = {};
-
-        // Sanitize IDs to prevent CastError 500s
-        if (campusId && mongoose.Types.ObjectId.isValid(campusId)) {
-            query.campusId = campusId;
+        const targetCampusId = campusId || req.user.campusId?._id || req.user.campusId;
+        if (!targetCampusId) {
+            return res.status(400).json({ message: 'Campus is required. Please select a campus first.' });
         }
 
-        if (postedBy) {
-            const cleanId = postedBy.replace('postedBy:', '');
-            if (mongoose.Types.ObjectId.isValid(cleanId)) {
-                query.postedBy = cleanId;
+        // Generate embedding for matching
+        let embedding = [];
+        if (image) {
+            try {
+                embedding = await generateImageEmbedding(image);
+            } catch (e) {
+                // Non-critical: continue without embedding
             }
         }
 
-        if (req.query.resolvedBy && mongoose.Types.ObjectId.isValid(req.query.resolvedBy)) {
-            query.resolvedBy = req.query.resolvedBy;
-        }
+        const item = await LostItem.create({
+            title: title.trim(),
+            description: description.trim(),
+            location: location.trim(),
+            category: category || 'Others',
+            image: image || null,
+            campusId: targetCampusId,
+            postedBy: req.user._id,
+            bounty: bounty ? parseFloat(bounty) : 0,
+            priority: priority || 'normal',
+            isInsured: isInsured || false,
+            coordinates: coordinates || {},
+            embedding,
+        });
 
-        // Default to 'active' unless 'all' or specific status requested
-        if (status === 'all') {
-            // No filter
-        } else if (status) {
-            query.status = status;
-        } else {
-            query.status = 'active';
-            // Also filter out expired items
-            query.expiresAt = { $gt: new Date() };
-        }
+        // Blockchain logging (non-blocking)
+        logToBlockchain(item._id, 'ITEM_POSTED', {
+            type: 'lost',
+            title: item.title,
+            postedBy: req.user._id,
+            campusId: targetCampusId
+        }).catch(err => console.error('Blockchain log error:', err.message));
 
-        const items = await LostItem.find(query)
-            .populate('postedBy', 'fullName photoURL email phone role')
-            .sort({ createdAt: -1 });
+        // Smart matching (non-blocking)
+        findAndNotifyMatches(item, 'lost').catch(err =>
+            console.error('Match error:', err.message)
+        );
 
-        cache.set(cacheKey, items);
-        res.json(items);
+        res.status(201).json(item);
+
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
+        console.error('Post Lost Item Error:', err.message);
+        res.status(500).json({ message: 'Failed to post lost item.' });
     }
 });
 
-// Mark item as resolved
-router.put("/:id/resolve", verifyToken, async (req, res) => {
+// ============================================================
+// GET LOST ITEMS
+// ============================================================
+
+router.get('/', authMiddleware, async (req, res) => {
     try {
-        const item = await LostItem.findOne({ _id: req.params.id, postedBy: req.user.userId });
+        const { campusId, category, status, postedBy, search, page = 1, limit = 50 } = req.query;
+        const filter = {};
+
+        if (status === 'all') {
+            // No status filter (returns everything)
+        } else {
+            filter.status = status || 'active';
+        }
+
+        if (postedBy) filter.postedBy = postedBy;
+        if (campusId) filter.campusId = campusId;
+        if (category && category !== 'All') filter.category = category;
+
+        if (search) {
+            filter.$or = [
+                { title: { $regex: search, $options: 'i' } },
+                { description: { $regex: search, $options: 'i' } },
+                { location: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const items = await LostItem.find(filter)
+            .populate('postedBy', 'fullName photoURL email')
+            .sort({ createdAt: -1 })
+            .skip((parseInt(page) - 1) * parseInt(limit))
+            .limit(parseInt(limit));
+
+        res.json(items);
+
+    } catch (err) {
+        console.error('Get Lost Items Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch lost items.' });
+    }
+});
+
+// ============================================================
+// GET SINGLE LOST ITEM
+// ============================================================
+
+router.get('/:id', authMiddleware, async (req, res) => {
+    try {
+        const item = await LostItem.findById(req.params.id)
+            .populate('postedBy', 'fullName photoURL email phone karmaPoints');
+
         if (!item) {
-            return res.status(404).json({ error: "Item not found or unauthorized" });
+            return res.status(404).json({ message: 'Item not found.' });
+        }
+
+        // Increment view count
+        item.viewCount = (item.viewCount || 0) + 1;
+        await item.save();
+
+        res.json(item);
+
+    } catch (err) {
+        console.error('Get Lost Item Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch item.' });
+    }
+});
+
+// ============================================================
+// MARK AS RESOLVED
+// ============================================================
+
+router.patch('/:id/resolve', authMiddleware, async (req, res) => {
+    try {
+        const item = await LostItem.findById(req.params.id);
+        if (!item) {
+            return res.status(404).json({ message: 'Item not found.' });
+        }
+
+        // Only owner or admin can resolve
+        if (item.postedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Not authorized to resolve this item.' });
         }
 
         item.status = 'resolved';
-        item.resolvedBy = req.user.userId; // Usually self-resolved if manual
+        item.resolvedAt = new Date();
+        item.resolvedBy = req.user._id;
         await item.save();
 
-        // Invalidate cache on update
-        cache.flushAll();
+        // Blockchain log
+        logToBlockchain(item._id, 'ITEM_RESOLVED', {
+            resolvedBy: req.user._id
+        }).catch(err => console.error('Blockchain log error:', err.message));
 
-        // Award small karma for manual cleanup
-        await User.findByIdAndUpdate(req.user.userId, { $inc: { karmaPoints: 10 } });
+        res.json({ message: 'Item marked as resolved.', item });
 
-        res.json(item);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Resolve Error:', err.message);
+        res.status(500).json({ message: 'Failed to resolve item.' });
     }
 });
 
-// DELETE item
-router.delete("/:id", verifyToken, async (req, res) => {
+// ============================================================
+// DELETE ITEM
+// ============================================================
+
+router.delete('/:id', authMiddleware, async (req, res) => {
     try {
         const item = await LostItem.findById(req.params.id);
-
         if (!item) {
-            return res.status(404).json({ error: "Item not found" });
+            return res.status(404).json({ message: 'Item not found.' });
         }
 
-        // Only allow deletion if user is the poster or an admin
-        if (item.postedBy.toString() !== req.user.userId && req.dbUser.role !== 'admin') {
-            return res.status(403).json({ error: "Unauthorized: You can only delete your own items." });
+        // Only owner or admin can delete
+        if (item.postedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Not authorized to delete this item.' });
         }
 
-        await item.deleteOne();
+        await LostItem.findByIdAndDelete(req.params.id);
 
-        // Invalidate cache on delete
-        cache.flushAll();
+        res.json({ message: 'Item deleted successfully.' });
 
-        res.json({ message: "Deleted successfully" });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// DEBUG: Catch-all for lost routes to find the 500 error source
-router.get("/postedBy:id", async (req, res) => {
-    console.log("[DEBUG] Weird Catch Route hit with ID:", req.params.id);
-    try {
-        const id = req.params.id.replace(':', '');
-        const items = await LostItem.find({ postedBy: id });
-        res.json(items);
-    } catch (err) {
-        console.error("[DEBUG] Weird Catch Route Error:", err);
-        res.status(500).json({ error: err.message });
+        console.error('Delete Error:', err.message);
+        res.status(500).json({ message: 'Failed to delete item.' });
     }
 });
 

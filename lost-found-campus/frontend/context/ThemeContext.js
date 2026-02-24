@@ -23,49 +23,49 @@ export const colors = {
             shadow: 'rgba(79, 70, 229, 0.1)'
         },
         dark: {
-            background: '#0F172A',
-            card: '#1E293B',
-            glassCard: 'rgba(30, 41, 59, 0.7)',
-            text: '#F8FAFC',
+            background: '#0A0D14', // Deep Indigo Dark
+            card: '#151921', // Surface card
+            glassCard: 'rgba(21, 25, 33, 0.8)',
+            text: '#FFFFFF',
             textSecondary: '#94A3B8',
-            border: '#334155',
-            primary: '#6366F1',
-            primaryGradient: ['#6366F1', '#818CF8'],
-            accent: '#A5B4FC',
-            success: '#34D399',
-            danger: '#F87171',
-            warning: '#FBBF24',
-            info: '#38BDF8',
-            shadow: 'rgba(0, 0, 0, 0.3)'
+            border: '#1C222D',
+            primary: '#2D5BFF', // Indigo Blue
+            primaryGradient: ['#2D5BFF', '#17A2B8'], // Indigo to Teal
+            accent: '#17A2B8', // Teal
+            success: '#10B981',
+            danger: '#EF4444',
+            warning: '#F59E0B',
+            info: '#0EA5E9',
+            shadow: 'rgba(0, 0, 0, 0.5)'
         }
     },
     admin: {
         light: {
-            background: '#FFF1F2', // Rose-50
+            background: '#F1F5F9', // Blueish Slate
             card: '#FFFFFF',
             glassCard: 'rgba(255, 255, 255, 0.9)',
-            text: '#9F1239', // Rose-900
-            textSecondary: '#BE123C', // Rose-700
-            border: '#FFE4E6',
-            primary: '#E11D48', // Rose-600
-            primaryGradient: ['#E11D48', '#FB7185'],
-            accent: '#FDA4AF',
+            text: '#1E293B',
+            textSecondary: '#475569',
+            border: '#E2E8F0',
+            primary: '#B45309', // Deep Amber
+            primaryGradient: ['#B45309', '#D97706'],
+            accent: '#F59E0B',
             success: '#059669',
             danger: '#DC2626',
             warning: '#D97706',
             info: '#2563EB',
-            shadow: 'rgba(225, 29, 72, 0.15)'
+            shadow: 'rgba(180, 83, 9, 0.15)'
         },
         dark: {
-            background: '#881337', // Rose-950 (very dark)
-            card: '#9F1239', // Rose-900
-            glassCard: 'rgba(159, 18, 57, 0.8)',
-            text: '#FFF1F2',
-            textSecondary: '#FDA4AF',
-            border: '#BE123C',
-            primary: '#FB7185',
-            primaryGradient: ['#FB7185', '#FFF1F2'],
-            accent: '#FECDD3',
+            background: '#0A0D14', // Match Deep Indigo for consistency
+            card: '#161B22',
+            glassCard: 'rgba(22, 27, 34, 0.8)',
+            text: '#F1F5F9',
+            textSecondary: '#94A3B8',
+            border: '#30363D',
+            primary: '#F59E0B', // Bright Amber Gold
+            primaryGradient: ['#F59E0B', '#FCD34D'],
+            accent: '#FCD34D',
             success: '#34D399',
             danger: '#F87171',
             warning: '#FBBF24',
@@ -77,7 +77,9 @@ export const colors = {
 
 export const ThemeProvider = ({ children }) => {
     const { dbUser } = useUser();
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isHighContrast, setIsHighContrast] = useState(false);
+    const [isLargeText, setIsLargeText] = useState(false);
 
     // Load theme when user changes or on mount
     useEffect(() => {
@@ -86,26 +88,37 @@ export const ThemeProvider = ({ children }) => {
 
     const loadTheme = async () => {
         try {
-            // Use user-specific key if logged in, else global
-            const key = dbUser?._id ? `darkMode_${dbUser._id}` : 'darkMode_guest';
+            const key = dbUser?._id ? `theme_prefs_${dbUser._id}` : 'theme_prefs_guest';
             const saved = await AsyncStorage.getItem(key);
-            if (saved !== null) {
-                setIsDarkMode(saved === 'true');
-            } else {
-                // Default to false if no preference found
-                setIsDarkMode(false);
+            if (saved) {
+                const prefs = JSON.parse(saved);
+                setIsDarkMode(prefs.darkMode);
+                setIsHighContrast(prefs.highContrast || false);
+                setIsLargeText(prefs.largeText || false);
             }
         } catch (error) {
             console.log('Error loading theme:', error);
         }
     };
 
-    const toggleTheme = async () => {
-        const newValue = !isDarkMode;
-        setIsDarkMode(newValue);
+    const toggleTheme = () => updatePrefs({ darkMode: !isDarkMode });
+    const toggleHighContrast = () => updatePrefs({ highContrast: !isHighContrast });
+    const toggleLargeText = () => updatePrefs({ largeText: !isLargeText });
+
+    const updatePrefs = async (newPrefs) => {
+        const updated = {
+            darkMode: newPrefs.hasOwnProperty('darkMode') ? newPrefs.darkMode : isDarkMode,
+            highContrast: newPrefs.hasOwnProperty('highContrast') ? newPrefs.highContrast : isHighContrast,
+            largeText: newPrefs.hasOwnProperty('largeText') ? newPrefs.largeText : isLargeText
+        };
+
+        if (newPrefs.hasOwnProperty('darkMode')) setIsDarkMode(newPrefs.darkMode);
+        if (newPrefs.hasOwnProperty('highContrast')) setIsHighContrast(newPrefs.highContrast);
+        if (newPrefs.hasOwnProperty('largeText')) setIsLargeText(newPrefs.largeText);
+
         try {
-            const key = dbUser?._id ? `darkMode_${dbUser._id}` : 'darkMode_guest';
-            await AsyncStorage.setItem(key, String(newValue));
+            const key = dbUser?._id ? `theme_prefs_${dbUser._id}` : 'theme_prefs_guest';
+            await AsyncStorage.setItem(key, JSON.stringify(updated));
         } catch (error) {
             console.log('Error saving theme:', error);
         }
@@ -113,10 +126,33 @@ export const ThemeProvider = ({ children }) => {
 
     const role = dbUser?.role === 'admin' ? 'admin' : 'student';
     const mode = isDarkMode ? 'dark' : 'light';
-    const theme = colors[role][mode];
+    let theme = { ...colors[role][mode] };
+
+    // Accessibility Overrides
+    if (isHighContrast) {
+        theme.background = isDarkMode ? '#000000' : '#FFFFFF';
+        theme.card = isDarkMode ? '#000000' : '#FFFFFF';
+        theme.text = isDarkMode ? '#FFFFFF' : '#000000';
+        theme.textSecondary = isDarkMode ? '#FFFF00' : '#000000'; // Yellow/Black for high contrast
+        theme.border = isDarkMode ? '#FFFFFF' : '#000000';
+        theme.primary = isDarkMode ? '#FFFF00' : '#0000FF';
+    }
+
+    if (isLargeText) {
+        // This is a simplistic way, usually text size is handled in components. 
+        // We export a scaling factor.
+        theme.fontScale = 1.3;
+    } else {
+        theme.fontScale = 1.0;
+    }
 
     return (
-        <ThemeContext.Provider value={{ isDarkMode, toggleTheme, theme, colors, role }}>
+        <ThemeContext.Provider value={{
+            isDarkMode, toggleTheme,
+            isHighContrast, toggleHighContrast,
+            isLargeText, toggleLargeText,
+            theme, colors, role
+        }}>
             {children}
         </ThemeContext.Provider>
     );

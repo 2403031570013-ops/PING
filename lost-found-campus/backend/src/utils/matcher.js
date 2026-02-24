@@ -1,70 +1,99 @@
 const LostItem = require('../models/LostItem');
 const FoundItem = require('../models/FoundItem');
 const Notification = require('../models/Notification');
-const User = require('../models/User');
-const { Expo } = require("expo-server-sdk");
-const expo = new Expo();
+const { calculateMatchScore, extractKeywords } = require('./aiService');
 
-const findAndNotifyMatches = async (newItem, type) => {
+/**
+ * Smart Matching Engine
+ * When a new item is posted (lost or found), find potential matches from
+ * the opposite type and notify both parties.
+ */
+const findAndNotifyMatches = async (newItem, itemType) => {
     try {
-        const TargetModel = type === 'lost' ? FoundItem : LostItem;
-        const targetType = type === 'lost' ? 'found' : 'lost';
+        const isLost = itemType === 'lost' || itemType === 'LostItem';
+        const OppositeModel = isLost ? FoundItem : LostItem;
 
-        // 1. Basic Matching Logic: Same Campus + Same Category
-        // + Fuzzy Title Match (Case insensitive regex)
-        // Simplification: Check if title words exist in description or title
-
-        const searchTerms = newItem.title.split(' ').filter(w => w.length > 3).map(w => new RegExp(w, 'i'));
-
-        if (searchTerms.length === 0) return; // Title too short
-
-        const matches = await TargetModel.find({
+        // Find candidate items from the same campus, same category, and active
+        const candidates = await OppositeModel.find({
             campusId: newItem.campusId,
-            category: newItem.category,
             status: 'active',
-            $or: [
-                { title: { $in: searchTerms } },
-                { description: { $in: searchTerms } }
-            ]
-        }).populate('postedBy');
+        })
+            .populate('postedBy', 'fullName')
+            .sort({ createdAt: -1 })
+            .limit(50);
 
-        console.log(`[Matcher] Found ${matches.length} matches for new ${type} item: ${newItem.title}`);
+        if (candidates.length === 0) return [];
 
-        // 2. Notify Users
-        for (const match of matches) {
-            // Who to notify? 
-            // If I just posted "Lost iPhone", notify the guy who posted "Found iPhone" (match).
-            // AND notify ME that a match exists?
-            // Usually, notify the person who created the OLDER post that a NEW match was found.
+        // Score all candidates
+        const matches = [];
+        for (const candidate of candidates) {
+            // Skip items by the same user
+            if (candidate.postedBy?._id?.toString() === newItem.postedBy?.toString()) continue;
 
-            // Scenario A: I post LOST iPhone. System finds existing FOUND iPhone.
-            // Notify ME (New Poster): "We found a potential match!"
-            // Notify HIM (Old Poster): "Someone just posted a matching Lost Item!"
+            const { score, factors } = calculateMatchScore(newItem, candidate);
 
-            // Notify New Poster (newItem.postedBy)
-            await Notification.create({
-                userId: newItem.postedBy,
-                title: "Potential Match Found! 🎯",
-                message: `We found a '${match.title}' that matches your post. Check it out!`,
-                type: 'info',
-                data: { itemId: match._id, itemType: targetType }
-            });
-
-            // Notify Old Poster (match.postedBy)
-            await Notification.create({
-                userId: match.postedBy._id,
-                title: "New Match for your Item! 🎯",
-                message: `A new '${newItem.title}' was posted that matches your item.`,
-                type: 'info',
-                data: { itemId: newItem._id, itemType: type }
-            });
-
-            // Push Notifications (Best Effort)
-            // ... (Skipping verbose push logic for speed, Notifications schema handles in-app)
+            if (score >= 25) { // Minimum threshold for notification
+                matches.push({
+                    item: candidate,
+                    score,
+                    factors
+                });
+            }
         }
 
-    } catch (error) {
-        console.error("[Matcher] Error:", error);
+        // Sort by score descending
+        matches.sort((a, b) => b.score - a.score);
+
+        // Take top 5 matches
+        const topMatches = matches.slice(0, 5);
+
+        // Create notifications for both parties
+        const notifications = [];
+        for (const match of topMatches) {
+            const matchedItem = match.item;
+            const matchPercentage = match.score;
+
+            // Notification for the new item poster
+            notifications.push(
+                Notification.create({
+                    userId: newItem.postedBy,
+                    title: `🎯 Potential Match Found! (${matchPercentage}%)`,
+                    message: `A ${isLost ? 'found' : 'lost'} item "${matchedItem.title}" at ${matchedItem.location || 'campus'} might be related to your ${isLost ? 'lost' : 'found'} item "${newItem.title}". Tap to view details.`,
+                    type: 'match',
+                    data: {
+                        itemId: matchedItem._id,
+                        itemType: isLost ? 'found' : 'lost',
+                        matchScore: matchPercentage,
+                        factors: match.factors
+                    }
+                })
+            );
+
+            // Notification for the matched item poster
+            notifications.push(
+                Notification.create({
+                    userId: matchedItem.postedBy._id || matchedItem.postedBy,
+                    title: `🎯 Possible Match! (${matchPercentage}%)`,
+                    message: `A new ${isLost ? 'lost' : 'found'} item "${newItem.title}" might match your ${isLost ? 'found' : 'lost'} item "${matchedItem.title}". Check it out!`,
+                    type: 'match',
+                    data: {
+                        itemId: newItem._id,
+                        itemType: isLost ? 'lost' : 'found',
+                        matchScore: matchPercentage,
+                        factors: match.factors
+                    }
+                })
+            );
+        }
+
+        await Promise.all(notifications);
+
+        console.log(`✅ Smart Matching: Found ${topMatches.length} potential matches for "${newItem.title}" (best: ${topMatches[0]?.score || 0}%)`);
+        return topMatches;
+
+    } catch (err) {
+        console.error('❌ Matching Error:', err.message);
+        return [];
     }
 };
 

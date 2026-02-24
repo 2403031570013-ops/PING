@@ -63,21 +63,24 @@ export const UserProvider = ({ children }) => {
     };
 
     const [socket, setSocket] = useState(null);
+    const [onboardingData, setOnboardingData] = useState(null);
 
     useEffect(() => {
         refreshUser();
         refreshBadges();
+        loadOnboardingData();
 
         if (dbUser?._id) {
             const s = initiateSocket(dbUser._id);
             setSocket(s);
 
             // Listen for real-time notifications
-            s.on('new-notification', (notif) => {
-                console.log("[Context] Real-time notification received:", notif.title);
-                setUnreadNotifs(prev => prev + 1);
-                // Optionally show a toast here if you have a toast provider
-            });
+            if (s && typeof s.on === 'function') {
+                s.on('new-notification', (notif) => {
+                    console.log("[Context] Real-time notification received:", notif.title);
+                    setUnreadNotifs(prev => prev + 1);
+                });
+            }
         }
 
         // Polling for badges every 5 seconds
@@ -99,12 +102,27 @@ export const UserProvider = ({ children }) => {
         };
     }, [dbUser?._id]);
 
+    const loadOnboardingData = async () => {
+        try {
+            const saved = await AsyncStorage.getItem('temp_onboarding');
+            if (saved) setOnboardingData(JSON.parse(saved));
+        } catch (e) {
+            console.log("Error loading onboarding data", e);
+        }
+    };
+
+    const saveOnboardingData = async (data) => {
+        setOnboardingData(data);
+        await AsyncStorage.setItem('temp_onboarding', JSON.stringify(data));
+    };
+
     return (
         <UserContext.Provider value={{
             dbUser, setDbUser, refreshUser,
             loading, logout,
             unreadMsgs, unreadNotifs, refreshBadges,
-            socket
+            socket,
+            onboardingData, setOnboardingData: saveOnboardingData
         }}>
             {children}
         </UserContext.Provider>

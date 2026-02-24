@@ -1,8 +1,17 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { emit } from '../utils/events';
 
-const API_BASE_URL = 'http://127.0.0.1:5000/api';
+const getBaseUrl = () => {
+    if (Platform.OS === 'web') {
+        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        return `http://${hostname}:5000/api/`;
+    }
+    return 'http://127.0.0.1:5000/api/';
+};
+
+const API_BASE_URL = getBaseUrl();
 
 const apiClient = axios.create({
     baseURL: API_BASE_URL,
