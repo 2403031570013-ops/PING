@@ -282,11 +282,16 @@ if (isClusterMode && cluster.isMaster) {
     });
 
     // ================================================================
-    // START SERVER
+    // START SERVER (Local Only)
     // ================================================================
-    server.listen(PORT, "0.0.0.0", () => {
-        console.log(`\n🚀 Lost & Found Campus Backend`);
-        console.log(`   Worker ${process.pid} running on http://localhost:${PORT}`);
-        console.log(`   Environment: ${process.env.NODE_ENV || 'development'}\n`);
-    });
+    if (require.main === module) {
+        server.listen(PORT, "0.0.0.0", () => {
+            console.log(`\n🚀 Lost & Found Campus Backend`);
+            console.log(`   Worker ${process.pid} running on http://localhost:${PORT}`);
+            console.log(`   Environment: ${process.env.NODE_ENV || 'development'}\n`);
+        });
+    }
+
+    // Export for Vercel
+    module.exports = app;
 }
