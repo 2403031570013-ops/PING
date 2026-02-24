@@ -4,8 +4,8 @@ import { Platform } from 'react-native';
 import { emit } from '../utils/events';
 
 const getBaseUrl = () => {
-    // Production Vercel URL
-    return 'https://lost-found-backend-sigma.vercel.app/api/';
+    // Production RENDER URL (Supports WebSockets)
+    return 'https://lostfound-backend-obc3.onrender.com/api/';
 };
 
 const API_BASE_URL = getBaseUrl();

@@ -2,8 +2,8 @@ import io from 'socket.io-client';
 import { Platform } from 'react-native';
 
 const getBaseUrl = () => {
-    // Production Vercel URL
-    return 'https://lost-found-backend-sigma.vercel.app';
+    // Production RENDER URL (Supports WebSockets)
+    return 'https://lostfound-backend-obc3.onrender.com';
 };
 
 const SOCKET_URL = getBaseUrl();
