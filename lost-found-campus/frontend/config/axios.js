@@ -4,11 +4,8 @@ import { Platform } from 'react-native';
 import { emit } from '../utils/events';
 
 const getBaseUrl = () => {
-    if (Platform.OS === 'web') {
-        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-        return `http://${hostname}:5000/api/`;
-    }
-    return 'http://127.0.0.1:5000/api/';
+    // Production Vercel URL
+    return 'https://lost-found-backend-sigma.vercel.app/api/';
 };
 
 const API_BASE_URL = getBaseUrl();

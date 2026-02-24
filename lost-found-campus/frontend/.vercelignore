@@ -1,0 +1,10 @@
+node_modules
+.expo
+web-build
+dist
+.env
+.vercel
+node_modules/
+.expo/
+web-build/
+dist/

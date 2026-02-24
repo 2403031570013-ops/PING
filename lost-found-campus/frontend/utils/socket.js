@@ -2,11 +2,8 @@ import io from 'socket.io-client';
 import { Platform } from 'react-native';
 
 const getBaseUrl = () => {
-    if (Platform.OS === 'web') {
-        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-        return `http://${hostname}:5000`;
-    }
-    return 'http://127.0.0.1:5000';
+    // Production Vercel URL
+    return 'https://lost-found-backend-sigma.vercel.app';
 };
 
 const SOCKET_URL = getBaseUrl();
