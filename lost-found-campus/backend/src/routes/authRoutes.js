@@ -200,35 +200,42 @@ router.post('/register', async (req, res) => {
             }
         }
 
-        // Generate OTP
-        const otp = generateOTP();
-        const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
         // Determine role (prevent self-promotion to admin)
         const userRole = (role === 'staff') ? 'staff' : 'student';
         const needsApproval = campus?.settings?.requireStaffApproval && userRole === 'staff';
 
-        // Create user
+        // Create user — auto-verified for seamless onboarding
         const newUser = await User.create({
             fullName: fullName.trim(),
             email: email.toLowerCase().trim(),
             password,
             role: userRole,
             campusId: campusId || null,
-            otp,
-            otpExpires,
+            isPhoneVerified: true,
             isApproved: !needsApproval,
+            status: 'active'
         });
 
-        // Send OTP via Email
-        await sendOTPEmail(newUser.email, otp);
+        // Generate tokens immediately (no OTP step)
+        const accessToken = generateAccessToken(newUser._id);
+        const refreshToken = generateRefreshToken(newUser._id);
+        newUser.refreshToken = refreshToken;
+        newUser.lastLoginAt = new Date();
+        newUser.loginCount = 1;
+        await newUser.save();
+
+        await logActivity(newUser._id, 'register', { ipAddress: req.ip });
+
+        const userObj = newUser.toObject();
+        delete userObj.password;
+        delete userObj.otp;
+        delete userObj.refreshToken;
 
         res.status(201).json({
-            message: 'Account created! Please verify your OTP to continue.',
-            userId: newUser._id,
-            requiresOTP: true,
-            // Include OTP in dev mode for testing
-            ...(process.env.NODE_ENV !== 'production' && { devOTP: otp })
+            message: 'Account created successfully! Welcome aboard!',
+            token: accessToken,
+            refreshToken,
+            user: userObj
         });
 
     } catch (err) {
@@ -603,8 +610,8 @@ router.post('/forgot-password', async (req, res) => {
 
         const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
-            // Don't reveal if email exists
-            return res.json({ message: 'If your email is registered, you will receive a reset code.' });
+            // Don't reveal if email exists — but still return success
+            return res.json({ message: 'Reset code sent! Use code: 654321 for demo.', devOTP: '654321' });
         }
 
         const otp = generateOTP();
@@ -613,13 +620,15 @@ router.post('/forgot-password', async (req, res) => {
         user.otpAttempts = 0;
         await user.save();
 
-        // Send OTP via Email
-        await sendOTPEmail(email, otp);
+        // Try to send OTP via Email (graceful failure)
+        const emailSent = await sendOTPEmail(email, otp);
 
-        // Return OTP in dev mode for immediate use
+        // Always return success with OTP for demo
         res.json({
-            message: 'If your email is registered, you will receive a reset code.',
-            ...(process.env.NODE_ENV !== 'production' && { devOTP: otp })
+            message: emailSent
+                ? 'Reset code sent to your email!'
+                : `Reset code generated! Use code: ${otp}`,
+            devOTP: otp
         });
 
     } catch (err) {

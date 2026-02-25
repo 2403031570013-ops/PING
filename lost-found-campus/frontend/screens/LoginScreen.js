@@ -80,6 +80,13 @@ export default function LoginScreen({ navigation }) {
                 return;
             }
 
+            // Handle OTP required (legacy flow, shouldn't happen now)
+            if (res.data?.requiresOTP) {
+                showMsg("Verify OTP", `Check your email. Dev OTP: ${res.data.devOTP || '654321'}`);
+                setLoading(false);
+                return;
+            }
+
             const { user, token } = res.data;
             if (user && token) {
                 await AsyncStorage.setItem('authToken', token);

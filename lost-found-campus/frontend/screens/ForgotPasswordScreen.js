@@ -54,11 +54,12 @@ export default function ForgotPasswordScreen({ navigation }) {
 
         setLoading(true);
         try {
-            await apiClient.post('/auth/forgot-password', { email });
+            const response = await apiClient.post('/auth/forgot-password', { email });
             // Save email to survive refresh
             await AsyncStorage.setItem('resetEmail', email);
 
-            const msg = "Reset code sent to your email (Check console for demo code: 654321)";
+            const devOTP = response.data?.devOTP || '654321';
+            const msg = response.data?.message || `Reset code sent! Use code: ${devOTP}`;
             if (Platform.OS === 'web') window.alert(msg);
             else Alert.alert("Success", msg);
 
