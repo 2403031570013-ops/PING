@@ -17,7 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -98,11 +98,11 @@ export default function HomeScreen({ navigation, route }) {
         const poster = item.postedBy || {};
         const posterName = poster.fullName || 'Unknown';
         const posterPhoto = poster.photoURL
-            ? (poster.photoURL.startsWith('http') || poster.photoURL.startsWith('data:') ? poster.photoURL : `http://127.0.0.1:5000${poster.photoURL}`)
+            ? (poster.photoURL.startsWith('http') || poster.photoURL.startsWith('data:') ? poster.photoURL : `${BACKEND_URL}${poster.photoURL}`)
             : `https://ui-avatars.com/api/?name=${encodeURIComponent(posterName)}&background=random`;
 
         const itemImage = item.image
-            ? (item.image.startsWith('http') || item.image.startsWith('data:') ? item.image : `http://127.0.0.1:5000${item.image}`)
+            ? (item.image.startsWith('http') || item.image.startsWith('data:') ? item.image : `${BACKEND_URL}${item.image}`)
             : 'https://via.placeholder.com/150/667eea/ffffff?text=No+Image';
 
         return (
@@ -170,7 +170,7 @@ export default function HomeScreen({ navigation, route }) {
                             source={{
                                 uri: dbUser?.photoURL ?
                                     (dbUser.photoURL.startsWith('http') || dbUser.photoURL.startsWith('data:') ?
-                                        dbUser.photoURL : `http://127.0.0.1:5000${dbUser.photoURL}`) :
+                                        dbUser.photoURL : `${BACKEND_URL}${dbUser.photoURL}`) :
                                     `https://ui-avatars.com/api/?name=${encodeURIComponent(dbUser?.fullName || 'User')}&background=${isDarkMode ? '2D5BFF' : 'fff'}&color=${isDarkMode ? 'fff' : '2D5BFF'}`
                             }}
                             style={styles.headerAvatar}

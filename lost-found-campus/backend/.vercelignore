@@ -1,8 +1,0 @@
-node_modules
-.mongo-data
-uploads
-.env
-.vercel
-node_modules/
-.mongo-data/
-uploads/

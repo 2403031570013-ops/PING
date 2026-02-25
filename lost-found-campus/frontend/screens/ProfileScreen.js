@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 
 export default function ProfileScreen({ navigation }) {
     const { dbUser, logout, refreshUser, unreadNotifs, refreshBadges } = useUser();
@@ -347,7 +347,7 @@ export default function ProfileScreen({ navigation }) {
                             source={{
                                 uri: dbUser.photoURL ?
                                     (dbUser.photoURL.startsWith('http') || dbUser.photoURL.startsWith('data:') ?
-                                        dbUser.photoURL : `http://127.0.0.1:5000${dbUser.photoURL}`) :
+                                        dbUser.photoURL : `${BACKEND_URL}${dbUser.photoURL}`) :
                                     `https://ui-avatars.com/api/?name=${encodeURIComponent(dbUser.fullName)}&background=${isDarkMode ? '2D5BFF' : 'fff'}&color=${isDarkMode ? 'fff' : '2D5BFF'}&size=200&bold=true`
                             }}
                             style={styles.avatar}

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image, Platform, Alert } from 'react-native';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Print from 'expo-print';
@@ -11,7 +11,7 @@ import * as Sharing from 'expo-sharing';
 const getImageUrl = (url) => {
     if (!url) return 'https://via.placeholder.com/150/667eea/ffffff?text=Item';
     if (url.startsWith('http') || url.startsWith('data:')) return url;
-    return `http://127.0.0.1:5000${url}`;
+    return `${BACKEND_URL}${url}`;
 };
 
 export default function HistoryScreen({ navigation }) {

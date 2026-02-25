@@ -1,12 +1,8 @@
 import io from 'socket.io-client';
 import { Platform } from 'react-native';
+import { BACKEND_URL } from '../config/axios';
 
-const getBaseUrl = () => {
-    // Production RENDER URL (Supports WebSockets)
-    return 'https://lostfound-backend-obc3.onrender.com';
-};
-
-const SOCKET_URL = getBaseUrl();
+const SOCKET_URL = BACKEND_URL;
 
 let socket;
 

@@ -51,6 +51,10 @@ const userSchema = new mongoose.Schema({
     loginCount: { type: Number, default: 0 },
     failedLoginAttempts: { type: Number, default: 0 },
     lockoutUntil: { type: Date, default: null },
+    adminKeyFailedAttempts: { type: Number, default: 0 },
+    adminKeyLockoutUntil: { type: Date, default: null },
+
+    // Notifications
 
     // Blocked users
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

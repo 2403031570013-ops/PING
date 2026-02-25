@@ -2,6 +2,8 @@ const LostItem = require('../models/LostItem');
 const FoundItem = require('../models/FoundItem');
 const Notification = require('../models/Notification');
 const { calculateMatchScore, extractKeywords } = require('./aiService');
+const { sendMatchEmail } = require('./emailService');
+const User = require('../models/User');
 
 /**
  * Smart Matching Engine
@@ -18,9 +20,12 @@ const findAndNotifyMatches = async (newItem, itemType) => {
             campusId: newItem.campusId,
             status: 'active',
         })
-            .populate('postedBy', 'fullName')
+            .populate('postedBy', 'fullName email')
             .sort({ createdAt: -1 })
             .limit(50);
+
+        // Fetch new item's poster email
+        const newItemPoster = await User.findById(newItem.postedBy).select('email fullName');
 
         if (candidates.length === 0) return [];
 
@@ -87,6 +92,23 @@ const findAndNotifyMatches = async (newItem, itemType) => {
         }
 
         await Promise.all(notifications);
+
+        // Send Email Notifications for high-confidence matches (>= 50%)
+        for (const match of topMatches) {
+            if (match.score >= 50) {
+                const matchedItem = match.item;
+
+                // Email to new item poster
+                if (newItemPoster?.email) {
+                    await sendMatchEmail(newItemPoster.email, itemType, matchedItem.title, match.score);
+                }
+
+                // Email to matched item poster
+                if (matchedItem.postedBy?.email) {
+                    await sendMatchEmail(matchedItem.postedBy.email, isLost ? 'found' : 'lost', newItem.title, match.score);
+                }
+            }
+        }
 
         console.log(`✅ Smart Matching: Found ${topMatches.length} potential matches for "${newItem.title}" (best: ${topMatches[0]?.score || 0}%)`);
         return topMatches;

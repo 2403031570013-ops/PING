@@ -5,6 +5,7 @@ const { authMiddleware } = require('../middleware/authMiddleware');
 const { logToBlockchain } = require('../utils/blockchain');
 const { findAndNotifyMatches } = require('../utils/matcher');
 const { generateImageEmbedding } = require('../utils/aiService');
+const { uploadBase64 } = require('../utils/cloudinary');
 
 // ============================================================
 // POST LOST ITEM
@@ -12,7 +13,7 @@ const { generateImageEmbedding } = require('../utils/aiService');
 
 router.post('/', authMiddleware, async (req, res) => {
     try {
-        const { title, description, location, category, image, campusId, bounty, priority, isInsured, coordinates } = req.body;
+        let { title, description, location, category, image, campusId, bounty, priority, isInsured, coordinates } = req.body;
 
         if (!title || !description || !location || !image) {
             const missing = [];
@@ -21,6 +22,15 @@ router.post('/', authMiddleware, async (req, res) => {
             if (!location) missing.push('Location');
             if (!image) missing.push('Photo');
             return res.status(400).json({ message: `Missing mandatory fields: ${missing.join(', ')}` });
+        }
+
+        // Upload to Cloudinary if it's a data URI
+        if (image && image.startsWith('data:')) {
+            try {
+                image = await uploadBase64(image);
+            } catch (e) {
+                return res.status(500).json({ message: 'Image upload failed.' });
+            }
         }
 
         const targetCampusId = campusId || req.user.campusId?._id || req.user.campusId;
@@ -112,6 +122,56 @@ router.get('/', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Get Lost Items Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch lost items.' });
+    }
+});
+
+// ============================================================
+// UPDATE LOST ITEM
+// ============================================================
+
+router.put('/:id', authMiddleware, async (req, res) => {
+    try {
+        const item = await LostItem.findById(req.params.id);
+        if (!item) {
+            return res.status(404).json({ message: 'Item not found.' });
+        }
+
+        // Only owner or admin can update
+        if (item.postedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'Not authorized to update this item.' });
+        }
+
+        let { title, description, location, category, image, bounty, priority, isInsured } = req.body;
+
+        if (image && image.startsWith('data:')) {
+            try {
+                image = await uploadBase64(image);
+            } catch (e) {
+                return res.status(500).json({ message: 'Image upload failed.' });
+            }
+        }
+
+        if (title) item.title = title;
+        if (description) item.description = description;
+        if (location) item.location = location;
+        if (category) item.category = category;
+        if (image) item.image = image;
+        if (bounty !== undefined) item.bounty = bounty;
+        if (priority) item.priority = priority;
+        if (isInsured !== undefined) item.isInsured = isInsured;
+
+        await item.save();
+
+        // Blockchain log
+        logToBlockchain(item._id, 'ITEM_UPDATED', {
+            updatedBy: req.user._id
+        }).catch(err => console.error('Blockchain log error:', err.message));
+
+        res.json({ message: 'Item updated successfully.', item });
+
+    } catch (err) {
+        console.error('Update Lost Item Error:', err.message);
+        res.status(500).json({ message: 'Failed to update lost item.' });
     }
 });
 

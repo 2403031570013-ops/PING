@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { useTheme } from '../context/ThemeContext';
 
 export default function BlockedUsersScreen({ navigation }) {
@@ -66,7 +66,7 @@ export default function BlockedUsersScreen({ navigation }) {
     const renderItem = ({ item }) => (
         <View style={[styles.userCard, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
             <Image
-                source={{ uri: item.photoURL ? (item.photoURL.startsWith('http') ? item.photoURL : `http://127.0.0.1:5000${item.photoURL}`) : `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName)}&background=random` }}
+                source={{ uri: item.photoURL ? (item.photoURL.startsWith('http') ? item.photoURL : `${BACKEND_URL}${item.photoURL}`) : `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName)}&background=random` }}
                 style={styles.avatar}
             />
             <View style={styles.userInfo}>

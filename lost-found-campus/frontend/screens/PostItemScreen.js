@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     TextInput,
@@ -14,7 +14,8 @@ import {
     Dimensions
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import apiClient from '../config/axios';
+import * as Location from 'expo-location';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { useUser } from '../context/UserContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,7 +24,7 @@ import { useTheme } from '../context/ThemeContext';
 export default function PostItemScreen({ navigation, route }) {
     const { dbUser } = useUser();
     const { theme, isDarkMode } = useTheme();
-    const { campusId } = route.params || {};
+    const { campusId, editItem } = route.params || {};
 
     // Determine the campus ID to use
     // Priority: Route params -> User's campus -> null
@@ -41,6 +42,65 @@ export default function PostItemScreen({ navigation, route }) {
     const [bounty, setBounty] = useState('');
     const [isInsured, setIsInsured] = useState(false);
     const [priority, setPriority] = useState('normal');
+    const [coordinates, setCoordinates] = useState(null);
+    const [locationLoading, setLocationLoading] = useState(false);
+
+    useEffect(() => {
+        if (editItem) {
+            setTitle(editItem.title || '');
+            setDesc(editItem.description || '');
+            setLocation(editItem.location || '');
+            setCategory(editItem.category || 'Others');
+            setType(editItem.type || 'lost');
+            setBounty(editItem.bounty?.toString() || '');
+            setIsInsured(!!editItem.isInsured);
+            setPriority(editItem.priority || 'normal');
+            if (editItem.coordinates) setCoordinates(editItem.coordinates);
+
+            if (editItem.image) {
+                const imgUrl = editItem.image.startsWith('http') || editItem.image.startsWith('data:')
+                    ? editItem.image
+                    : `${BACKEND_URL}${editItem.image}`;
+                setImage(imgUrl);
+            }
+        }
+    }, [editItem]);
+
+    const handleGetLocation = async () => {
+        setLocationLoading(true);
+        try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Denied', 'We need location access to tag the exact spot.');
+                return;
+            }
+
+            const currentPos = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+            });
+
+            setCoordinates({
+                latitude: currentPos.coords.latitude,
+                longitude: currentPos.coords.longitude
+            });
+
+            // Try reverse geocoding to fill location name if empty
+            if (!location) {
+                const [addr] = await Location.reverseGeocodeAsync({
+                    latitude: currentPos.coords.latitude,
+                    longitude: currentPos.coords.longitude
+                });
+                if (addr && (addr.name || addr.street)) {
+                    setLocation(`${addr.name || ''} ${addr.street || ''}`.trim());
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            Alert.alert('Location Error', 'Failed to get your current location.');
+        } finally {
+            setLocationLoading(false);
+        }
+    };
 
     // Validation errors
     const [errors, setErrors] = useState({});
@@ -144,13 +204,20 @@ export default function PostItemScreen({ navigation, route }) {
                 campusId: targetCampusId,
                 bounty: bounty ? parseFloat(bounty) : 0,
                 isInsured,
-                priority
+                priority,
+                coordinates
             };
 
-            const response = await apiClient.post(`/${type}`, payload);
+            let response;
+            if (editItem) {
+                response = await apiClient.put(`/${type}/${editItem._id}`, payload);
+            } else {
+                response = await apiClient.post(`/${type}`, payload);
+            }
 
             if (response.status === 201 || response.status === 200) {
-                Alert.alert("Success", "Item posted successfully!");
+                const successMsg = editItem ? "Item updated successfully!" : "Item posted successfully!";
+                Alert.alert("Success", successMsg);
                 navigation.goBack();
             }
         } catch (error) {
@@ -268,6 +335,31 @@ export default function PostItemScreen({ navigation, route }) {
                         value={location}
                         onChangeText={(t) => { setLocation(t); setErrors(e => ({ ...e, location: false })); }}
                     />
+
+                    <TouchableOpacity
+                        onPress={handleGetLocation}
+                        style={[styles.locationBadge, { backgroundColor: coordinates ? '#D1FAE5' : theme.card, borderColor: coordinates ? '#10B981' : theme.border }]}
+                    >
+                        {locationLoading ? (
+                            <ActivityIndicator size="small" color={theme.primary} />
+                        ) : (
+                            <>
+                                <Ionicons
+                                    name={coordinates ? "location" : "location-outline"}
+                                    size={16}
+                                    color={coordinates ? '#10B981' : theme.textSecondary}
+                                />
+                                <Text style={[styles.locationBadgeText, { color: coordinates ? '#065F46' : theme.textSecondary }]}>
+                                    {coordinates ? "GPS Spot Captured" : "Get Current Spot"}
+                                </Text>
+                                {coordinates && (
+                                    <TouchableOpacity onPress={() => setCoordinates(null)} style={{ marginLeft: 8 }}>
+                                        <Ionicons name="close-circle" size={14} color="#EF4444" />
+                                    </TouchableOpacity>
+                                )}
+                            </>
+                        )}
+                    </TouchableOpacity>
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -456,5 +548,20 @@ const styles = StyleSheet.create({
     pickerIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
     pickerLabel: { fontSize: 13, fontWeight: '700' },
     cancelBtn: { padding: 16, borderRadius: 15, alignItems: 'center' },
-    cancelBtnText: { fontWeight: '700', fontSize: 14 }
+    cancelBtnText: { fontWeight: '700', fontSize: 14 },
+    locationBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        alignSelf: 'flex-start',
+        gap: 6,
+    },
+    locationBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+    }
 });

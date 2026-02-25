@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, Image, StyleSheet, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
 
 const getImageUrl = (url) => {
     if (!url) return null;
-    return url.startsWith('http') ? url : `http://127.0.0.1:5000${url}`;
+    return url.startsWith('http') ? url : `${BACKEND_URL}${url}`;
 };
 
 export default function LeaderboardScreen({ navigation }) {

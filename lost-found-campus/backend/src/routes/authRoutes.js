@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Campus = require('../models/Campus');
 const ActivityLog = require('../models/ActivityLog');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { sendOTPEmail } = require('../utils/emailService');
 
 // ============================================================
 // HELPERS
@@ -219,8 +220,8 @@ router.post('/register', async (req, res) => {
             isApproved: !needsApproval,
         });
 
-        // In production: send OTP via email/SMS
-        console.log(`📧 OTP for ${email}: ${otp}`);
+        // Send OTP via Email
+        await sendOTPEmail(newUser.email, otp);
 
         res.status(201).json({
             message: 'Account created! Please verify your OTP to continue.',
@@ -351,7 +352,8 @@ router.post('/resend-otp', async (req, res) => {
         user.otpAttempts = 0;
         await user.save();
 
-        console.log(`📧 Resend OTP for ${email}: ${otp}`);
+        // Send OTP via Email
+        await sendOTPEmail(email, otp);
 
         res.json({
             message: 'New OTP sent!',
@@ -427,6 +429,14 @@ router.post('/login', async (req, res) => {
             const { adminKey } = req.body;
             const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY || 'PARUL2024ADMIN';
 
+            // Check admin key lockout
+            if (user.adminKeyLockoutUntil && user.adminKeyLockoutUntil > new Date()) {
+                const minutesLeft = Math.ceil((user.adminKeyLockoutUntil - new Date()) / 60000);
+                return res.status(429).json({
+                    message: `Admin access locked for ${minutesLeft} minutes due to too many invalid attempts.`
+                });
+            }
+
             if (!adminKey) {
                 // First attempt — tell frontend to ask for admin key
                 return res.status(200).json({
@@ -437,18 +447,35 @@ router.post('/login', async (req, res) => {
             }
 
             if (adminKey !== ADMIN_SECRET) {
-                // Wrong admin key — log the failed attempt
+                // Wrong admin key — log and increment failed attempts
+                user.adminKeyFailedAttempts = (user.adminKeyFailedAttempts || 0) + 1;
+
+                // Lock after 5 failed attempts
+                if (user.adminKeyFailedAttempts >= 5) {
+                    user.adminKeyLockoutUntil = new Date(Date.now() + 60 * 60 * 1000); // 1 hour lockout
+                    user.adminKeyFailedAttempts = 0;
+                    await user.save();
+                    return res.status(429).json({
+                        message: 'Admin access locked for 1 hour due to too many invalid key attempts.'
+                    });
+                }
+
+                await user.save();
                 await logActivity(user._id, 'admin_key_failed', {
                     ipAddress: req.ip,
                     details: 'Invalid admin key attempt'
                 });
                 console.warn(`⚠️ SECURITY: Failed admin key attempt for ${user.email} from IP ${req.ip}`);
                 return res.status(403).json({
-                    message: 'Invalid Admin Key. This attempt has been logged.'
+                    message: `Invalid Admin Key. Attempt ${user.adminKeyFailedAttempts}/5.`
                 });
             }
 
-            // Correct admin key — log successful admin login
+            // Correct admin key — reset attempts and log successful admin login
+            user.adminKeyFailedAttempts = 0;
+            user.adminKeyLockoutUntil = null;
+            await user.save();
+
             await logActivity(user._id, 'admin_login', {
                 ipAddress: req.ip,
                 details: 'Admin key verified successfully'
@@ -586,7 +613,8 @@ router.post('/forgot-password', async (req, res) => {
         user.otpAttempts = 0;
         await user.save();
 
-        console.log(`📧 Password Reset OTP for ${email}: ${otp}`);
+        // Send OTP via Email
+        await sendOTPEmail(email, otp);
 
         // Return OTP in dev mode for immediate use
         res.json({
@@ -688,10 +716,20 @@ router.get('/profile', authMiddleware, async (req, res) => {
     }
 });
 
+const { uploadBase64 } = require('../utils/cloudinary');
+
 router.put('/profile', authMiddleware, async (req, res) => {
     try {
-        const { fullName, phone, photoURL, whatsappNumber, campusId } = req.body;
+        let { fullName, phone, photoURL, whatsappNumber, campusId } = req.body;
         const updates = {};
+
+        if (photoURL && photoURL.startsWith('data:')) {
+            try {
+                photoURL = await uploadBase64(photoURL);
+            } catch (e) {
+                return res.status(500).json({ message: 'Photo upload failed.' });
+            }
+        }
 
         if (fullName) updates.fullName = fullName.trim();
         if (phone) updates.phone = phone.trim();

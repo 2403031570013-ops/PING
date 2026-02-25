@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useUser } from '../context/UserContext';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -276,14 +276,14 @@ export default function ChatScreen({ route, navigation }) {
                 >
                     {item.imageURL && (
                         <TouchableOpacity onPress={() => setSelectedImage(item.imageURL)}>
-                            <Image source={{ uri: item.imageURL.startsWith('http') ? item.imageURL : `http://127.0.0.1:5000${item.imageURL}` }} style={styles.msgImage} />
+                            <Image source={{ uri: item.imageURL.startsWith('http') ? item.imageURL : `${BACKEND_URL}${item.imageURL}` }} style={styles.msgImage} />
                         </TouchableOpacity>
                     )}
 
                     {isAudio ? (
                         <TouchableOpacity
                             style={styles.audioBubble}
-                            onPress={() => playSound(item.audioURL.startsWith('http') ? item.audioURL : `http://127.0.0.1:5000${item.audioURL}`)}
+                            onPress={() => playSound(item.audioURL.startsWith('http') ? item.audioURL : `${BACKEND_URL}${item.audioURL}`)}
                         >
                             <Ionicons name="play-circle" size={32} color={isMe ? "#fff" : theme.primary} />
                             <Text style={isMe ? styles.myMsgText : [styles.theirMsgText, { color: theme.text }]}>Voice Note</Text>
@@ -354,7 +354,7 @@ export default function ChatScreen({ route, navigation }) {
                     </TouchableOpacity>
                     {selectedImage && (
                         <Image
-                            source={{ uri: selectedImage.startsWith('http') ? selectedImage : `http://127.0.0.1:5000${selectedImage}` }}
+                            source={{ uri: selectedImage.startsWith('http') ? selectedImage : `${BACKEND_URL}${selectedImage}` }}
                             style={styles.fullImage}
                             resizeMode="contain"
                         />

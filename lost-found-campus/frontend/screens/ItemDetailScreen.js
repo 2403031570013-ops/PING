@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, StatusBar, Platform, Share, Linking, Modal } from 'react-native';
 import { useUser } from '../context/UserContext';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ReportModal from '../components/ReportModal';
@@ -43,14 +43,14 @@ export default function ItemDetailScreen({ route, navigation }) {
     // If it's still an ID string (legacy), we handle that too.
     const poster = item.postedBy || {};
     const posterName = poster.fullName || 'Unknown User';
-    const posterPhoto = poster.photoURL ? (poster.photoURL.startsWith('http') || poster.photoURL.startsWith('data:') ? poster.photoURL : `http://127.0.0.1:5000${poster.photoURL}`) : `https://ui-avatars.com/api/?name=${posterName}&background=random`;
+    const posterPhoto = poster.photoURL ? (poster.photoURL.startsWith('http') || poster.photoURL.startsWith('data:') ? poster.photoURL : `${BACKEND_URL}${poster.photoURL}`) : `https://ui-avatars.com/api/?name=${posterName}&background=random`;
 
     const [selectedImage, setSelectedImage] = useState(null);
 
     const getImageUrl = (url) => {
         if (!url) return 'https://via.placeholder.com/400';
         if (url.startsWith('http') || url.startsWith('data:')) return url;
-        return `http://127.0.0.1:5000${url}`;
+        return `${BACKEND_URL}${url}`;
     };
 
     const handleShare = async () => {

@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -111,7 +111,7 @@ export default function EditProfileScreen({ navigation }) {
         if (photoURL) {
             return photoURL.startsWith('http') || photoURL.startsWith('data:')
                 ? photoURL
-                : `http://127.0.0.1:5000${photoURL}`;
+                : `${BACKEND_URL}${photoURL}`;
         }
         return `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=${isDarkMode ? '2D5BFF' : 'fff'}&color=${isDarkMode ? 'fff' : '2D5BFF'}&size=200&bold=true`;
     };

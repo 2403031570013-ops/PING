@@ -1,5 +1,6 @@
 {
     "version": 2,
+    "name": "lost-found-backend",
     "builds": [
         {
             "src": "src/app.js",
@@ -8,8 +9,15 @@
     ],
     "routes": [
         {
+            "src": "/(api|uploads)(.*)",
+            "dest": "src/app.js"
+        },
+        {
             "src": "/(.*)",
             "dest": "src/app.js"
         }
-    ]
+    ],
+    "env": {
+        "NODE_ENV": "production"
+    }
 }
