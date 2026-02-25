@@ -13,7 +13,8 @@ const { sanitizeInput } = require('./middleware/sanitize');
 
 // Clustering configuration
 const numCPUs = os.cpus().length;
-const isClusterMode = false; // Set true for production load balancing
+const isClusterMode = process.env.ENABLE_CLUSTER === 'true'; // Set true for production load balancing
+
 
 const initCronJobs = require('./utils/cronJobs');
 
@@ -288,8 +289,10 @@ if (isClusterMode && cluster.isMaster) {
         server.listen(PORT, "0.0.0.0", () => {
             console.log(`\n🚀 Lost & Found Campus Backend`);
             console.log(`   Worker ${process.pid} running on http://localhost:${PORT}`);
+            console.log(`   Mode: ${isClusterMode ? '💎 CLUSTER ENABLED' : '🔌 SINGLE PROCESS'}`);
             console.log(`   Environment: ${process.env.NODE_ENV || 'development'}\n`);
         });
+
     }
 
     // Export for Vercel

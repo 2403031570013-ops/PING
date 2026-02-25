@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import apiClient from '../config/axios';
+import apiClient, { BACKEND_URL } from '../config/axios';
 
 // Parul University real coordinates
 const CAMPUS_CENTER = { lat: 22.3572, lng: 73.2085 };
@@ -72,9 +72,13 @@ function generateLeafletHTML(items, landmarks) {
             category: item.category || 'Others',
             status: item.status || 'active',
             id: item._id || '',
-            postedBy: item.postedBy?.fullName || 'Anonymous'
+            postedBy: item.postedBy?.fullName || 'Anonymous',
+            image: item.image ? (item.image.startsWith('http') || item.image.startsWith('data:') ? item.image : BACKEND_URL + item.image) : null
         };
     });
+
+    // We need to use a dynamic backend URL for images in the iframe
+    // Since we're in an iframe, we pass the BACKEND_URL from the parent
 
     return `<!DOCTYPE html>
 <html>
@@ -92,48 +96,56 @@ function generateLeafletHTML(items, landmarks) {
         border-radius: 12px;
         padding: 0;
         box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+        overflow: hidden;
     }
     .custom-popup .leaflet-popup-content {
         margin: 0;
         min-width: 200px;
     }
+    .popup-img {
+        width: 100%;
+        height: 120px;
+        object-fit: cover;
+        background: #f1f5f9;
+        display: block;
+    }
     .popup-card {
-        padding: 14px 16px;
+        padding: 12px 14px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
     .popup-badge {
         display: inline-block;
-        padding: 3px 10px;
+        padding: 2px 8px;
         border-radius: 20px;
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         color: #fff;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
     .popup-badge.lost { background: linear-gradient(135deg, #EF4444, #DC2626); }
     .popup-badge.found { background: linear-gradient(135deg, #10B981, #059669); }
     .popup-title {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 700;
         color: #1E293B;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         line-height: 1.3;
     }
     .popup-info {
-        font-size: 11px;
+        font-size: 10px;
         color: #64748B;
         display: flex;
         align-items: center;
         gap: 4px;
-        margin-bottom: 3px;
+        margin-bottom: 2px;
     }
     .popup-user {
-        font-size: 11px;
+        font-size: 10px;
         color: #8B5CF6;
         font-weight: 600;
-        margin-top: 6px;
+        margin-top: 4px;
     }
 
     .landmark-popup {
@@ -198,15 +210,15 @@ function generateLeafletHTML(items, landmarks) {
 
 <div class="stats-bar">
     <div class="stat">
-        <div class="stat-num red">${lostItems.length}</div>
+        <div class="stat-num red">\${lostItems.length}</div>
         <div class="stat-label">Lost</div>
     </div>
     <div class="stat">
-        <div class="stat-num green">${foundItems.length}</div>
+        <div class="stat-num green">\${foundItems.length}</div>
         <div class="stat-label">Found</div>
     </div>
     <div class="stat">
-        <div class="stat-num" style="color:#6366F1">${items.length}</div>
+        <div class="stat-num" style="color:#6366F1">\${items.length}</div>
         <div class="stat-label">Total</div>
     </div>
 </div>
@@ -217,7 +229,7 @@ function generateLeafletHTML(items, landmarks) {
     var map = L.map('map', {
         zoomControl: false,
         attributionControl: true
-    }).setView([${CAMPUS_CENTER.lat}, ${CAMPUS_CENTER.lng}], ${CAMPUS_ZOOM});
+    }).setView([\${CAMPUS_CENTER.lat}, \${CAMPUS_CENTER.lng}], \${CAMPUS_ZOOM});
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -228,7 +240,7 @@ function generateLeafletHTML(items, landmarks) {
     }).addTo(map);
 
     // Campus boundary circle
-    L.circle([${CAMPUS_CENTER.lat}, ${CAMPUS_CENTER.lng}], {
+    L.circle([\${CAMPUS_CENTER.lat}, \${CAMPUS_CENTER.lng}], {
         radius: 400,
         color: '#6366F1',
         weight: 2,
@@ -238,7 +250,7 @@ function generateLeafletHTML(items, landmarks) {
     }).addTo(map);
 
     // Landmark markers
-    var landmarks = ${JSON.stringify(landmarks)};
+    var landmarks = \${JSON.stringify(landmarks)};
     landmarks.forEach(function(lm) {
         var icon = L.divIcon({
             html: '<div style="font-size:24px;text-align:center;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3))">' + lm.icon + '</div>',
@@ -252,7 +264,7 @@ function generateLeafletHTML(items, landmarks) {
     });
 
     // Item markers
-    var items = ${JSON.stringify(itemMarkers)};
+    var items = \${JSON.stringify(itemMarkers)};
     items.forEach(function(item) {
         var color = item.type === 'lost' ? '#EF4444' : '#10B981';
         var iconSymbol = item.type === 'lost' ? '⚠️' : '✅';
@@ -264,13 +276,17 @@ function generateLeafletHTML(items, landmarks) {
             iconAnchor: [14, 14]
         });
 
-        var popup = '<div class="popup-card">' +
+        var popup = '<div class="custom-popup-content">';
+        if (item.image) {
+            popup += '<img src="' + item.image + '" class="popup-img" onerror="this.style.display=\\'none\\'">';
+        }
+        popup += '<div class="popup-card">' +
             '<span class="popup-badge ' + item.type + '">' + item.type + '</span>' +
             '<div class="popup-title">' + item.title + '</div>' +
             '<div class="popup-info">📍 ' + item.location + '</div>' +
             '<div class="popup-info">📂 ' + item.category + '</div>' +
             '<div class="popup-user">By: ' + item.postedBy + '</div>' +
-            '</div>';
+            '</div></div>';
 
         L.marker([item.lat, item.lng], { icon: icon })
             .addTo(map)
@@ -342,16 +358,25 @@ export default function MapScreen({ navigation }) {
     const renderMobileMap = () => {
         return (
             <View style={styles.center}>
-                <Ionicons name="map-outline" size={64} color={theme.textSecondary} />
-                <Text style={[styles.mobileText, { color: theme.textSecondary }]}>
-                    Map view optimized for web browser
+                <View style={[styles.optimizedBadge, { backgroundColor: theme.primary + '20' }]}>
+                    <Ionicons name="desktop-outline" size={32} color={theme.primary} />
+                </View>
+                <Text style={[styles.mobileText, { color: theme.text }]}>
+                    View on Desktop for best experience
                 </Text>
                 <Text style={[styles.mobileSubtext, { color: theme.textSecondary }]}>
-                    Open http://localhost:8081 in your browser
+                    Real-time item heatmaps and interactive campus markers are fully optimized for web browsers.
                 </Text>
+                <TouchableOpacity
+                    style={[styles.webBtn, { backgroundColor: theme.primary }]}
+                    onPress={() => {/* In a real app, this might open the web URL */ }}
+                >
+                    <Text style={styles.webBtnText}>Use Web Version</Text>
+                </TouchableOpacity>
             </View>
         );
     };
+
 
     const FilterButton = ({ label, value, icon }) => (
         <TouchableOpacity
@@ -522,7 +547,29 @@ const styles = StyleSheet.create({
     mobileSubtext: {
         fontSize: 12,
         textAlign: 'center',
+        paddingHorizontal: 30,
+        lineHeight: 18,
     },
+    optimizedBadge: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    webBtn: {
+        marginTop: 15,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 12,
+    },
+    webBtnText: {
+        color: '#fff',
+        fontWeight: '700',
+        fontSize: 13,
+    },
+
     legend: {
         flexDirection: 'row',
         justifyContent: 'center',
