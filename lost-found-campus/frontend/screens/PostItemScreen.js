@@ -132,37 +132,54 @@ export default function PostItemScreen({ navigation, route }) {
 
             if (!result.canceled) {
                 setIsScanning(true);
-                let base64Data = result.assets[0].base64;
+                const asset = result.assets[0];
+                let finalImage = asset.uri;
 
-                // BUG FIX: On web, base64 might be missing from result even if requested.
-                // We fetch the blob and convert it manually.
-                if (!base64Data && Platform.OS === 'web') {
+                if (Platform.OS === 'web') {
+                    // Maximum reliability for Web: Use Canvas to get Base64
                     try {
-                        const response = await fetch(result.assets[0].uri);
-                        const blob = await response.blob();
-                        base64Data = await new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result); // Full data URL
-                            reader.readAsDataURL(blob);
+                        const img = document.createElement('img');
+                        img.crossOrigin = 'anonymous';
+                        const base64Promise = new Promise((resolve, reject) => {
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                // Resize to reasonable dimensions if needed
+                                let width = img.width;
+                                let height = img.height;
+                                const max = 1000;
+                                if (width > max || height > max) {
+                                    if (width > height) {
+                                        height *= max / width;
+                                        width = max;
+                                    } else {
+                                        width *= max / height;
+                                        height = max;
+                                    }
+                                }
+                                canvas.width = width;
+                                canvas.height = height;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, width, height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.7));
+                            };
+                            img.onerror = () => reject(new Error('Failed to load image for conversion'));
+                            img.src = asset.uri;
                         });
+                        finalImage = await base64Promise;
                     } catch (e) {
-                        console.error("Base64 conversion failed:", e);
+                        console.error("Web Base64 conversion failed:", e);
+                        finalImage = asset.uri;
                     }
-                } else if (base64Data && !base64Data.startsWith('data:')) {
-                    // Mobile usually gives just raw base64, so we add prefix
-                    base64Data = `data:image/jpeg;base64,${base64Data}`;
+                } else {
+                    // Mobile handling
+                    finalImage = asset.base64 && !asset.base64.startsWith('data:')
+                        ? `data:image/jpeg;base64,${asset.base64}`
+                        : (asset.base64 || asset.uri);
                 }
 
-                // Simulate AI analysis taking a moment
-                setTimeout(() => {
-                    if (base64Data) {
-                        setImage(base64Data);
-                    } else {
-                        setImage(result.assets[0].uri);
-                    }
-                    setIsScanning(false);
-                    setErrors(e => ({ ...e, image: false }));
-                }, 1500);
+                setImage(finalImage);
+                setIsScanning(false);
+                setErrors(e => ({ ...e, image: false }));
             }
         } catch (e) {
             console.error("Image Picker Error:", e);
