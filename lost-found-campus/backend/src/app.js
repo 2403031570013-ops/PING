@@ -32,6 +32,8 @@ if (isClusterMode && cluster.isMaster) {
     });
 } else {
     const app = express();
+    app.set('trust proxy', 1); // Fix for express-rate-limit on Render/proxies
+
 
     // Connect to Database
     connectDB().then(() => {
