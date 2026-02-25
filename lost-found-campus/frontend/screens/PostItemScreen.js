@@ -137,15 +137,50 @@ export default function PostItemScreen({ navigation, route }) {
 
                 if (Platform.OS === 'web' || !asset.base64) {
                     try {
-                        const response = await fetch(asset.uri);
-                        const blob = await response.blob();
-                        finalImage = await new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result);
-                            reader.readAsDataURL(blob);
+                        // Resizing logic for Web to keep DB clean and payload small
+                        const img = document.createElement('img');
+                        const base64Promise = new Promise((resolve, reject) => {
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                let width = img.width;
+                                let height = img.height;
+                                const maxDimension = 800; // Max width/height
+
+                                if (width > maxDimension || height > maxDimension) {
+                                    if (width > height) {
+                                        height *= maxDimension / width;
+                                        width = maxDimension;
+                                    } else {
+                                        width *= maxDimension / height;
+                                        height = maxDimension;
+                                    }
+                                }
+
+                                canvas.width = width;
+                                canvas.height = height;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, width, height);
+                                // Compress to JPEG with 0.5 quality
+                                resolve(canvas.toDataURL('image/jpeg', 0.5));
+                            };
+                            img.onerror = reject;
+                            img.src = asset.uri;
                         });
+                        finalImage = await base64Promise;
                     } catch (e) {
-                        console.error("Web conversion failed:", e);
+                        console.error("Web conversion/resize failed:", e);
+                        // Fallback to raw fetch if canvas fails
+                        try {
+                            const response = await fetch(asset.uri);
+                            const blob = await response.blob();
+                            finalImage = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.readAsDataURL(blob);
+                            });
+                        } catch (e2) {
+                            finalImage = asset.uri;
+                        }
                     }
                 } else {
                     finalImage = asset.base64.startsWith('data:')

@@ -53,31 +53,38 @@ export default function EditProfileScreen({ navigation }) {
             });
 
             if (!result.canceled) {
-                let base64Data = result.assets[0].base64;
+                const asset = result.assets[0];
+                let base64Data = asset.base64;
 
-                // BUG FIX: On web, base64 might be missing from result even if requested.
-                // We fetch the blob and convert it manually using FileReader.
-                if (!base64Data && Platform.OS === 'web') {
+                if (Platform.OS === 'web') {
                     try {
-                        const response = await fetch(result.assets[0].uri);
-                        const blob = await response.blob();
-                        base64Data = await new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result); // Full data URL
-                            reader.readAsDataURL(blob);
+                        const img = document.createElement('img');
+                        const base64Promise = new Promise((resolve, reject) => {
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const size = 400; // Profile photos don't need to be huge
+                                canvas.width = size;
+                                canvas.height = size;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, size, size);
+                                resolve(canvas.toDataURL('image/jpeg', 0.6));
+                            };
+                            img.onerror = reject;
+                            img.src = asset.uri;
                         });
+                        base64Data = await base64Promise;
                     } catch (e) {
-                        console.error("Base64 conversion failed:", e);
+                        console.error("Web profile photo conversion failed:", e);
+                        base64Data = asset.uri;
                     }
                 } else if (base64Data && !base64Data.startsWith('data:')) {
-                    // Mobile raw base64
                     base64Data = `data:image/jpeg;base64,${base64Data}`;
                 }
 
                 if (base64Data) {
                     setPhotoURL(base64Data);
                 } else {
-                    setPhotoURL(result.assets[0].uri);
+                    setPhotoURL(asset.uri);
                 }
             }
         } catch (err) {

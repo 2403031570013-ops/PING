@@ -6,6 +6,7 @@ const { logToBlockchain } = require('../utils/blockchain');
 const { findAndNotifyMatches } = require('../utils/matcher');
 const { generateImageEmbedding } = require('../utils/aiService');
 const { uploadBase64 } = require('../utils/cloudinary');
+const { saveBase64Locally } = require('../utils/fileUpload');
 
 // ============================================================
 // POST LOST ITEM
@@ -24,18 +25,33 @@ router.post('/', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: `Missing mandatory fields: ${missing.join(', ')}` });
         }
 
-        // Validate image data (avoid saving corrupted undefined base64)
-        if (typeof image === 'string' && image.includes(',undefined')) {
-            return res.status(400).json({ message: "Corrupted image data detected. Please try capturing the photo again." });
+        // Validate image data
+        if (typeof image === 'string') {
+            if (image.includes(',undefined')) {
+                return res.status(400).json({ message: "Corrupted image data detected. Please try capturing the photo again." });
+            }
+            if (image.startsWith('blob:')) {
+                return res.status(400).json({ message: "Invalid image format (Blob). Please try selecting the image again." });
+            }
         }
 
-        // Upload to Cloudinary if it's a data URI
+        // Upload to Cloudinary OR Save Locally as fallback
         if (image && image.startsWith('data:')) {
             try {
+                // Try Cloudinary first
                 image = await uploadBase64(image);
             } catch (e) {
-                console.warn('[LOST] Cloudinary upload failed, keeping base64:', e.message);
-                // Keep the base64 image as-is (works for demo)
+                console.warn('[LOST] Cloudinary failed, falling back to local storage:', e.message);
+                try {
+                    // Fallback to local file system
+                    image = await saveBase64Locally(image);
+                } catch (e2) {
+                    console.error('[LOST] Local storage also failed:', e2.message);
+                    // Last resort: keep base64 BUT only if it's manageable (under 500KB)
+                    if (image.length > 700000) {
+                        return res.status(400).json({ message: "Image is too large to process without Cloudinary. Please use a smaller photo." });
+                    }
+                }
             }
         }
 
