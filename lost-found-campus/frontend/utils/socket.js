@@ -7,17 +7,7 @@ const SOCKET_URL = BACKEND_URL;
 let socket;
 
 export const initiateSocket = (userId) => {
-    if (Platform.OS === 'web') {
-        const stub = {
-            on: () => { },
-            off: () => { },
-            emit: () => { },
-            disconnect: () => { }
-        };
-        socket = stub; // Ensure getSocket() returns the stub too
-        return stub;
-    }
-
+    // Removed web stub to enable real-time features in browser
     if (!userId) return null;
 
     try {

@@ -48,14 +48,13 @@ router.post('/', authMiddleware, async (req, res) => {
             campusId = campusId._id;
         }
 
-        if (!campusId) {
-            return res.status(400).json({ message: "Missing required field: campusId" });
-        }
-
-        let chat = await Chat.findOne({
-            campusId: campusId,
+        // Search for existing chat between these members
+        const query = {
             members: { $all: [currentId, otherUserId] }
-        })
+        };
+        if (campusId) query.campusId = campusId;
+
+        let chat = await Chat.findOne(query)
             .populate('members', 'fullName photoURL email phone')
             .populate('campusId', 'name');
 

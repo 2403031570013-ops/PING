@@ -148,7 +148,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
             try {
                 image = await uploadBase64(image);
             } catch (e) {
-                return res.status(500).json({ message: 'Image upload failed.' });
+                console.warn('[LOST-UPDATE] Cloudinary upload failed, keeping base64:', e.message);
             }
         }
 

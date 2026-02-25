@@ -736,7 +736,8 @@ router.put('/profile', authMiddleware, async (req, res) => {
             try {
                 photoURL = await uploadBase64(photoURL);
             } catch (e) {
-                return res.status(500).json({ message: 'Photo upload failed.' });
+                console.warn('[PROFILE] Cloudinary upload failed, keeping base64:', e.message);
+                // Keep base64 for demo
             }
         }
 
