@@ -144,7 +144,7 @@ export default function PostItemScreen({ navigation, route }) {
                                 const canvas = document.createElement('canvas');
                                 let width = img.width;
                                 let height = img.height;
-                                const maxDimension = 800; // Max width/height
+                                const maxDimension = 700; // Even more aggressive for stability
 
                                 if (width > maxDimension || height > maxDimension) {
                                     if (width > height) {
@@ -160,8 +160,8 @@ export default function PostItemScreen({ navigation, route }) {
                                 canvas.height = height;
                                 const ctx = canvas.getContext('2d');
                                 ctx.drawImage(img, 0, 0, width, height);
-                                // Compress to JPEG with 0.5 quality
-                                resolve(canvas.toDataURL('image/jpeg', 0.5));
+                                // Compress to JPEG with 0.4 quality for ultra-small payload
+                                resolve(canvas.toDataURL('image/jpeg', 0.4));
                             };
                             img.onerror = reject;
                             img.src = asset.uri;

@@ -35,22 +35,17 @@ router.post('/', authMiddleware, async (req, res) => {
             }
         }
 
-        // Upload to Cloudinary OR Save Locally as fallback
+        // Upload to Cloudinary OR Keep Base64 as fallback
         if (image && image.startsWith('data:')) {
             try {
                 // Try Cloudinary first
                 image = await uploadBase64(image);
             } catch (e) {
-                console.warn('[LOST] Cloudinary failed, falling back to local storage:', e.message);
-                try {
-                    // Fallback to local file system
-                    image = await saveBase64Locally(image);
-                } catch (e2) {
-                    console.error('[LOST] Local storage also failed:', e2.message);
-                    // Last resort: keep base64 BUT only if it's manageable (under 500KB)
-                    if (image.length > 700000) {
-                        return res.status(400).json({ message: "Image is too large to process without Cloudinary. Please use a smaller photo." });
-                    }
+                console.warn('[LOST] Cloudinary failed, using Base64 fallback');
+                // We keep the image as base64. 
+                // We already resized it on the frontend to ~50-100KB which is fine for MongoDB.
+                if (image.length > 1000000) { // 1MB safety limit
+                    return res.status(400).json({ message: "Image is too large. Please use a smaller photo." });
                 }
             }
         }
