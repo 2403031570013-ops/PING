@@ -985,9 +985,22 @@ router.get('/campuses', async (req, res) => {
         // Auto-seed if no campuses exist
         if (campuses.length === 0) {
             console.log('[SEED] No campuses found. Auto-seeding default campuses...');
-            await Campus.insertMany(DEFAULT_CAMPUSES);
-            campuses = await Campus.find({ isActive: true }).sort({ name: 1 });
-            console.log(`[SEED] ✅ Seeded ${campuses.length} campuses`);
+            try {
+                const result = await Campus.insertMany(DEFAULT_CAMPUSES);
+                console.log(`[SEED] ✅ Inserted ${result.length} campuses`);
+                campuses = await Campus.find({ isActive: true }).sort({ name: 1 });
+            } catch (seedErr) {
+                console.error('[SEED] ❌ Auto-seed failed:', seedErr.message);
+                // Return default campuses as fallback with fake IDs
+                return res.json(DEFAULT_CAMPUSES.map((c, i) => ({
+                    _id: `fallback_${i}`,
+                    name: c.name,
+                    city: c.location,
+                    location: c.location,
+                    allowedEmailDomains: c.allowedEmailDomains,
+                    landmarks: c.landmarks
+                })));
+            }
         }
 
         // Return with city field for frontend
@@ -1003,7 +1016,25 @@ router.get('/campuses', async (req, res) => {
         res.json(result);
     } catch (err) {
         console.error('Campuses Error:', err);
-        res.status(500).json({ message: 'Failed to fetch campuses.' });
+        // Fallback: return default campuses even on complete failure
+        res.json(DEFAULT_CAMPUSES.map((c, i) => ({
+            _id: `fallback_${i}`,
+            name: c.name,
+            city: c.location,
+            location: c.location
+        })));
+    }
+});
+
+// Force seed campuses (one-time admin utility)
+router.post('/seed-campuses', async (req, res) => {
+    try {
+        await Campus.deleteMany({});
+        const result = await Campus.insertMany(DEFAULT_CAMPUSES);
+        res.json({ message: `Seeded ${result.length} campuses successfully!`, count: result.length });
+    } catch (err) {
+        console.error('Seed Campuses Error:', err);
+        res.status(500).json({ message: 'Failed to seed campuses.', error: err.message });
     }
 });
 
