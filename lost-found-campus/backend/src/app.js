@@ -133,6 +133,29 @@ if (isClusterMode && cluster.isMaster) {
         });
     });
 
+    // Diagnostic route for images
+    app.get('/api/debug-images', async (req, res) => {
+        try {
+            const LostItem = require('./models/LostItem');
+            const FoundItem = require('./models/FoundItem');
+            const lost = await LostItem.find().sort({ createdAt: -1 }).limit(5);
+            const found = await FoundItem.find().sort({ createdAt: -1 }).limit(5);
+
+            const format = (items) => items.map(i => ({
+                id: i._id,
+                title: i.title,
+                imageType: i.image ? (i.image.startsWith('http') ? 'Cloudinary/URL' : i.image.startsWith('data:') ? 'Base64' : 'Local Path') : 'None',
+                imagePreview: i.image ? i.image.substring(0, 50) + '...' : 'null',
+                imageLength: i.image ? i.image.length : 0,
+                createdAt: i.createdAt
+            }));
+
+            res.json({ lost: format(lost), found: format(found) });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     // Core routes
     const authRoutes = require("./routes/authRoutes");
     // Apply generous limiter to all auth, strict limiter only to login/register/otp

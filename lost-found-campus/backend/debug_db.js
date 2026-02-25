@@ -1,10 +1,13 @@
 
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']); // Fix for Node <-> Atlas connection issues
+
 const mongoose = require('mongoose');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Load env from the same directory as script
-dotenv.config();
+// Load env using absolute path
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Fix model paths
 const LostItem = require('./src/models/LostItem');
