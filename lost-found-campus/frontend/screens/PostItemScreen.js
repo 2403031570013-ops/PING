@@ -132,9 +132,31 @@ export default function PostItemScreen({ navigation, route }) {
 
             if (!result.canceled) {
                 setIsScanning(true);
+                let base64Data = result.assets[0].base64;
+
+                // BUG FIX: On web, base64 might be missing from result even if requested.
+                // We fetch the blob and convert it manually.
+                if (!base64Data && Platform.OS === 'web') {
+                    try {
+                        const response = await fetch(result.assets[0].uri);
+                        const blob = await response.blob();
+                        base64Data = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch (e) {
+                        console.error("Base64 conversion failed:", e);
+                    }
+                }
+
                 // Simulate AI analysis taking a moment
                 setTimeout(() => {
-                    setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+                    if (base64Data) {
+                        setImage(`data:image/jpeg;base64,${base64Data}`);
+                    } else {
+                        setImage(result.assets[0].uri);
+                    }
                     setIsScanning(false);
                     setErrors(e => ({ ...e, image: false }));
                 }, 1500);
