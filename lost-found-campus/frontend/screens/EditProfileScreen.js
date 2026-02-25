@@ -56,23 +56,26 @@ export default function EditProfileScreen({ navigation }) {
                 let base64Data = result.assets[0].base64;
 
                 // BUG FIX: On web, base64 might be missing from result even if requested.
-                // We fetch the blob and convert it manually.
+                // We fetch the blob and convert it manually using FileReader.
                 if (!base64Data && Platform.OS === 'web') {
                     try {
                         const response = await fetch(result.assets[0].uri);
                         const blob = await response.blob();
                         base64Data = await new Promise((resolve) => {
                             const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                            reader.onloadend = () => resolve(reader.result); // Full data URL
                             reader.readAsDataURL(blob);
                         });
                     } catch (e) {
                         console.error("Base64 conversion failed:", e);
                     }
+                } else if (base64Data && !base64Data.startsWith('data:')) {
+                    // Mobile raw base64
+                    base64Data = `data:image/jpeg;base64,${base64Data}`;
                 }
 
                 if (base64Data) {
-                    setPhotoURL(`data:image/jpeg;base64,${base64Data}`);
+                    setPhotoURL(base64Data);
                 } else {
                     setPhotoURL(result.assets[0].uri);
                 }

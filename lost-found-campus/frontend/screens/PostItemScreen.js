@@ -142,18 +142,21 @@ export default function PostItemScreen({ navigation, route }) {
                         const blob = await response.blob();
                         base64Data = await new Promise((resolve) => {
                             const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                            reader.onloadend = () => resolve(reader.result); // Full data URL
                             reader.readAsDataURL(blob);
                         });
                     } catch (e) {
                         console.error("Base64 conversion failed:", e);
                     }
+                } else if (base64Data && !base64Data.startsWith('data:')) {
+                    // Mobile usually gives just raw base64, so we add prefix
+                    base64Data = `data:image/jpeg;base64,${base64Data}`;
                 }
 
                 // Simulate AI analysis taking a moment
                 setTimeout(() => {
                     if (base64Data) {
-                        setImage(`data:image/jpeg;base64,${base64Data}`);
+                        setImage(base64Data);
                     } else {
                         setImage(result.assets[0].uri);
                     }

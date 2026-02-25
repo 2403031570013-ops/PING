@@ -24,6 +24,11 @@ router.post('/', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: `Missing mandatory fields: ${missing.join(', ')}` });
         }
 
+        // Validate image data (avoid saving corrupted undefined base64)
+        if (typeof image === 'string' && image.includes(',undefined')) {
+            return res.status(400).json({ message: "Corrupted image data detected. Please try capturing the photo again." });
+        }
+
         // Upload to Cloudinary if it's a data URI
         if (image && image.startsWith('data:')) {
             try {
