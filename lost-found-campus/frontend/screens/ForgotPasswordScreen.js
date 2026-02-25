@@ -58,8 +58,12 @@ export default function ForgotPasswordScreen({ navigation }) {
             // Save email to survive refresh
             await AsyncStorage.setItem('resetEmail', email);
 
-            const devOTP = response.data?.devOTP || '654321';
-            const msg = response.data?.message || `Reset code sent! Use code: ${devOTP}`;
+            const devOTP = response.data?.devOTP;
+            if (devOTP) {
+                setOtp(String(devOTP)); // Auto-fill the OTP field
+            }
+
+            const msg = response.data?.message || `Reset code generated! Use code: ${devOTP || '654321'}`;
             if (Platform.OS === 'web') window.alert(msg);
             else Alert.alert("Success", msg);
 

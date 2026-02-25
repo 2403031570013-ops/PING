@@ -19,7 +19,7 @@ const sendOTPEmail = async (email, otp) => {
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
         console.warn('⚠️ [EMAIL SERVICE] No SMTP credentials. Logging OTP to console:');
         console.log(`🔑 OTP for ${email}: ${otp}`);
-        return true;
+        return false; // Return false so caller knows email wasn't actually sent
     }
 
     try {
