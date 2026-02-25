@@ -113,6 +113,16 @@ if (isClusterMode && cluster.isMaster) {
     // API ROUTES
     // ================================================================
 
+    // Root route
+    app.get('/', (req, res) => {
+        res.json({
+            name: 'Lost & Found Campus API',
+            version: '1.0.0',
+            status: 'running',
+            timestamp: new Date().toISOString()
+        });
+    });
+
     // Health check
     app.get('/api/health', (req, res) => {
         res.json({
