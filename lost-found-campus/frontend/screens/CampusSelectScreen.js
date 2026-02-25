@@ -17,11 +17,13 @@ import apiClient from '../config/axios';
 import { useUser } from '../context/UserContext';
 
 const CAMPUS_ICONS = {
-    'Parul University': 'school',
-    'IIT Bombay': 'flask',
-    'Delhi University': 'library',
-    'BITS Pilani': 'rocket',
+    'Parul University - Vadodara': 'school',
+    'Parul University - Ahmedabad': 'school',
+    'Parul University - Goa': 'school',
     'VIT Vellore': 'planet',
+    'VIT Chennai': 'planet',
+    'VIT Bhopal': 'planet',
+    'VIT AP (Amaravati)': 'planet',
 };
 
 const CAMPUS_COLORS = [
@@ -30,6 +32,8 @@ const CAMPUS_COLORS = [
     ['#4facfe', '#00f2fe'],
     ['#43e97b', '#38f9d7'],
     ['#fa709a', '#fee140'],
+    ['#a18cd1', '#fbc2eb'],
+    ['#f6d365', '#fda085'],
 ];
 
 export default function CampusSelectScreen({ navigation }) {
@@ -63,7 +67,7 @@ export default function CampusSelectScreen({ navigation }) {
         if (!loading && campuses.length > 0 && dbUser?.email) {
             const isParulEmail = dbUser.email.toLowerCase().includes('@paruluniversity.ac.in');
             if (isParulEmail) {
-                const parulCampus = campuses.find(c => c.name.toLowerCase().includes('parul university'));
+                const parulCampus = campuses.find(c => c.name.toLowerCase().includes('parul university - vadodara'));
 
                 if (parulCampus) {
                     // Slight delay to ensure UI is rendered

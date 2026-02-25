@@ -897,6 +897,117 @@ router.get('/leaderboard', authMiddleware, async (req, res) => {
 });
 
 // ============================================================
+// CAMPUSES (List + Auto-Seed)
+// ============================================================
+
+const DEFAULT_CAMPUSES = [
+    {
+        name: 'Parul University - Vadodara',
+        location: 'Vadodara, Gujarat',
+        allowedEmailDomains: ['paruluniversity.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Gate', type: 'admin', coordinates: { latitude: 22.2937, longitude: 73.2269 } },
+            { name: 'Engineering Block', type: 'academic', coordinates: { latitude: 22.2940, longitude: 73.2272 } },
+            { name: 'Library', type: 'academic', coordinates: { latitude: 22.2935, longitude: 73.2265 } },
+            { name: 'Cafeteria', type: 'food', coordinates: { latitude: 22.2942, longitude: 73.2260 } },
+            { name: 'Hostel Block', type: 'hostel', coordinates: { latitude: 22.2930, longitude: 73.2275 } }
+        ]
+    },
+    {
+        name: 'Parul University - Ahmedabad',
+        location: 'Ahmedabad, Gujarat',
+        allowedEmailDomains: ['paruluniversity.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Campus', type: 'admin', coordinates: { latitude: 23.0225, longitude: 72.5714 } }
+        ]
+    },
+    {
+        name: 'Parul University - Goa',
+        location: 'Goa',
+        allowedEmailDomains: ['paruluniversity.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Campus', type: 'admin', coordinates: { latitude: 15.4909, longitude: 73.8278 } }
+        ]
+    },
+    {
+        name: 'VIT Vellore',
+        location: 'Vellore, Tamil Nadu',
+        allowedEmailDomains: ['vit.ac.in', 'vitstudent.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Gate', type: 'admin', coordinates: { latitude: 12.9692, longitude: 79.1559 } },
+            { name: 'Technology Tower', type: 'academic', coordinates: { latitude: 12.9695, longitude: 79.1562 } }
+        ]
+    },
+    {
+        name: 'VIT Chennai',
+        location: 'Chennai, Tamil Nadu',
+        allowedEmailDomains: ['vit.ac.in', 'vitstudent.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Campus', type: 'admin', coordinates: { latitude: 12.8406, longitude: 80.1534 } }
+        ]
+    },
+    {
+        name: 'VIT Bhopal',
+        location: 'Bhopal, Madhya Pradesh',
+        allowedEmailDomains: ['vitbhopal.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Campus', type: 'admin', coordinates: { latitude: 23.0777, longitude: 76.8512 } }
+        ]
+    },
+    {
+        name: 'VIT AP (Amaravati)',
+        location: 'Amaravati, Andhra Pradesh',
+        allowedEmailDomains: ['vitap.ac.in'],
+        isActive: true,
+        settings: { autoMatchEnabled: true, nftBadgesEnabled: true },
+        landmarks: [
+            { name: 'Main Campus', type: 'admin', coordinates: { latitude: 16.4937, longitude: 80.4984 } }
+        ]
+    }
+];
+
+router.get('/campuses', async (req, res) => {
+    try {
+        let campuses = await Campus.find({ isActive: true }).sort({ name: 1 });
+
+        // Auto-seed if no campuses exist
+        if (campuses.length === 0) {
+            console.log('[SEED] No campuses found. Auto-seeding default campuses...');
+            await Campus.insertMany(DEFAULT_CAMPUSES);
+            campuses = await Campus.find({ isActive: true }).sort({ name: 1 });
+            console.log(`[SEED] ✅ Seeded ${campuses.length} campuses`);
+        }
+
+        // Return with city field for frontend
+        const result = campuses.map(c => ({
+            _id: c._id,
+            name: c.name,
+            city: c.location,
+            location: c.location,
+            allowedEmailDomains: c.allowedEmailDomains,
+            landmarks: c.landmarks
+        }));
+
+        res.json(result);
+    } catch (err) {
+        console.error('Campuses Error:', err);
+        res.status(500).json({ message: 'Failed to fetch campuses.' });
+    }
+});
+
+// ============================================================
 // LOGOUT
 // ============================================================
 
