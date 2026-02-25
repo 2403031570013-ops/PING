@@ -50,7 +50,9 @@ export default function ItemDetailScreen({ route, navigation }) {
     const getImageUrl = (url) => {
         if (!url) return 'https://via.placeholder.com/400';
         if (url.startsWith('http') || url.startsWith('data:')) return url;
-        return `${BACKEND_URL}${url}`;
+        // Ensure there's a leading slash if not present
+        const path = url.startsWith('/') ? url : `/${url}`;
+        return `${BACKEND_URL}${path}`;
     };
 
     const handleShare = async () => {

@@ -102,7 +102,7 @@ export default function HomeScreen({ navigation, route }) {
             : `https://ui-avatars.com/api/?name=${encodeURIComponent(posterName)}&background=random`;
 
         const itemImage = item.image
-            ? (item.image.startsWith('http') || item.image.startsWith('data:') ? item.image : `${BACKEND_URL}${item.image}`)
+            ? (item.image.startsWith('http') || item.image.startsWith('data:') ? item.image : `${BACKEND_URL}${item.image.startsWith('/') ? '' : '/'}${item.image}`)
             : 'https://via.placeholder.com/150/667eea/ffffff?text=No+Image';
 
         return (
