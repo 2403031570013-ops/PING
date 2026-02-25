@@ -135,46 +135,22 @@ export default function PostItemScreen({ navigation, route }) {
                 const asset = result.assets[0];
                 let finalImage = asset.uri;
 
-                if (Platform.OS === 'web') {
-                    // Maximum reliability for Web: Use Canvas to get Base64
+                if (Platform.OS === 'web' || !asset.base64) {
                     try {
-                        const img = document.createElement('img');
-                        img.crossOrigin = 'anonymous';
-                        const base64Promise = new Promise((resolve, reject) => {
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                // Resize to reasonable dimensions if needed
-                                let width = img.width;
-                                let height = img.height;
-                                const max = 1000;
-                                if (width > max || height > max) {
-                                    if (width > height) {
-                                        height *= max / width;
-                                        width = max;
-                                    } else {
-                                        width *= max / height;
-                                        height = max;
-                                    }
-                                }
-                                canvas.width = width;
-                                canvas.height = height;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, width, height);
-                                resolve(canvas.toDataURL('image/jpeg', 0.7));
-                            };
-                            img.onerror = () => reject(new Error('Failed to load image for conversion'));
-                            img.src = asset.uri;
+                        const response = await fetch(asset.uri);
+                        const blob = await response.blob();
+                        finalImage = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.readAsDataURL(blob);
                         });
-                        finalImage = await base64Promise;
                     } catch (e) {
-                        console.error("Web Base64 conversion failed:", e);
-                        finalImage = asset.uri;
+                        console.error("Web conversion failed:", e);
                     }
                 } else {
-                    // Mobile handling
-                    finalImage = asset.base64 && !asset.base64.startsWith('data:')
-                        ? `data:image/jpeg;base64,${asset.base64}`
-                        : (asset.base64 || asset.uri);
+                    finalImage = asset.base64.startsWith('data:')
+                        ? asset.base64
+                        : `data:image/jpeg;base64,${asset.base64}`;
                 }
 
                 setImage(finalImage);
@@ -224,6 +200,11 @@ export default function PostItemScreen({ navigation, route }) {
             } else {
                 Alert.alert('⚠️ Missing Required Fields', msg);
             }
+            return;
+        }
+
+        if (image && image.startsWith('blob:')) {
+            Alert.alert("Error", "Image processing failed (Blob detected). Please try selecting the image again.");
             return;
         }
 
