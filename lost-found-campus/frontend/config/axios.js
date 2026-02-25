@@ -10,7 +10,8 @@ const getBaseUrl = () => {
     }
 
     // 2. Production URL (Default Render instance)
-    const PRODUCTION_URL = 'https://lostfound-backend-obc3.onrender.com/api/';
+    const PRODUCTION_URL = 'https://lostfound-backend-o5o3.onrender.com/api/';
+
 
     // 3. Optional: Dynamic detection for local dev
     // If you are using Expo Go on a physical device, change this to your computer's IP
