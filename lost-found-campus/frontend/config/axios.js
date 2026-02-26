@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import { emit } from '../utils/events';
 
 // Production URL (Default Render instance)
-const PRODUCTION_URL = 'https://lost-found-backend-c5d3.onrender.com/api/';
+const PRODUCTION_URL = 'https://lost-and-found-backend-akxw.onrender.com/api/';
 
 export const BACKEND_URL = PRODUCTION_URL.replace('/api/', '').replace(/\/$/, '');
 
