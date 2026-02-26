@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: lost-and-found-backend
+    env: node
+    plan: free
+    region: singapore # or your preferred region
+    branch: main
+    buildCommand: npm install
+    startCommand: node src/app.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        value: lost-found-campus-secure-key-2024
+      - key: ADMIN_SECRET_KEY
+        value: PARUL2024ADMIN
+      - key: ENABLE_CLUSTER
+        value: false
+      - key: MONGO_URI
+        sync: false # You will enter this value manually in the Render dashboard later
