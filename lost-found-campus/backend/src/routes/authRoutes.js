@@ -726,18 +726,32 @@ router.get('/profile', authMiddleware, async (req, res) => {
 });
 
 const { uploadBase64 } = require('../utils/cloudinary');
+const { saveBase64Locally } = require('../utils/fileUpload');
 
 router.put('/profile', authMiddleware, async (req, res) => {
     try {
         let { fullName, phone, photoURL, whatsappNumber, campusId } = req.body;
         const updates = {};
 
+        if (photoURL && photoURL.startsWith('blob:')) {
+            return res.status(400).json({ message: "Invalid image format (Blob). Please try selecting the image again." });
+        }
+
         if (photoURL && photoURL.startsWith('data:')) {
             try {
+                // Try Cloudinary
                 photoURL = await uploadBase64(photoURL);
             } catch (e) {
-                console.warn('[PROFILE] Cloudinary upload failed, keeping base64:', e.message);
-                // Keep base64 for demo
+                console.warn('[PROFILE] Cloudinary upload failed, falling back to local storage:', e.message);
+                try {
+                    // Fallback to local
+                    photoURL = await saveBase64Locally(photoURL);
+                } catch (e2) {
+                    console.error('[PROFILE] Local storage also failed:', e2.message);
+                    if (photoURL.length > 500000) {
+                        return res.status(400).json({ message: "Image is too large. Please use a smaller profile photo." });
+                    }
+                }
             }
         }
 
