@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore # or your preferred region
     branch: main
-    buildCommand: npm install
+    buildCommand: npm install --omit=dev --force
     startCommand: node src/app.js
     envVars:
       - key: NODE_VERSION
