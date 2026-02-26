@@ -1,0 +1,102 @@
+{
+    "name": "Campus Governance - Lost & Found",
+    "short_name": "CampusGov",
+    "description": "Institutional Lost & Found Management System. Report, track, and recover campus items in real-time.",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#ffffff",
+    "theme_color": "#4F46E5",
+    "scope": "/",
+    "lang": "en",
+    "categories": [
+        "education",
+        "utilities",
+        "productivity"
+    ],
+    "icons": [
+        {
+            "src": "/pwa-icons/icon-72.png",
+            "sizes": "72x72",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-96.png",
+            "sizes": "96x96",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-128.png",
+            "sizes": "128x128",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-144.png",
+            "sizes": "144x144",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-152.png",
+            "sizes": "152x152",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-384.png",
+            "sizes": "384x384",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "/pwa-icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "form_factor": "narrow",
+            "label": "Campus Governance Home"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Report Lost Item",
+            "short_name": "Lost",
+            "description": "Report a lost item on campus",
+            "url": "/?action=report-lost",
+            "icons": [
+                {
+                    "src": "/pwa-icons/icon-96.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Report Found Item",
+            "short_name": "Found",
+            "description": "Report a found item on campus",
+            "url": "/?action=report-found",
+            "icons": [
+                {
+                    "src": "/pwa-icons/icon-96.png",
+                    "sizes": "96x96"
+                }
+            ]
+        }
+    ]
+}

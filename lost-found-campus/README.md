@@ -91,6 +91,24 @@ lost-found-campus/
 
 ---
 
+## � Deployment (Production)
+
+### Quick Deployment Guide
+
+**Status:** ✅ **PRODUCTION READY**
+
+1. **See [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** for step-by-step instructions
+2. **Deploy Backend** to [Render.com](https://render.com)
+3. **Deploy Frontend** to [Vercel.com](https://vercel.com)
+4. **Database** setup on [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+
+**Key URLs after deployment:**
+- Backend API: `https://your-backend.onrender.com`
+- Frontend: `https://your-frontend.vercel.app`
+- MongoDB Atlas: `https://cloud.mongodb.com`
+
+---
+
 ## 🛠️ Security Features Implemented
 *   **JWT Auth**: Secure stateless authentication.
 *   **RBAC**: Middleware ensures Students cannot access Admin API.
@@ -98,6 +116,9 @@ lost-found-campus/
 *   **Input Sanitization**: All MongoDB queries use Mongoose to prevent injection.
 *   **Rate Limiting**: API is protected against brute force.
 *   **Audit Logging**: Every sensitive admin action is logged permanently.
+*   **Helmet.js**: Secure HTTP headers on all responses.
+*   **Bcryptjs**: Password hashing with 12 salt rounds.
+*   **OTP Brute-force Protection**: Lockout after 3 failed attempts.
 
 ---
 
